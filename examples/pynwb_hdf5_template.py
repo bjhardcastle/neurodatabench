@@ -36,7 +36,7 @@ import neurodatabench
 
 logger = logging.getLogger(__name__)
 
-state = {}
+state: dict[str, Any] = {}
 
 
 def setup(context: neurodatabench.RunContext) -> None:
@@ -47,7 +47,7 @@ def setup(context: neurodatabench.RunContext) -> None:
     )
     _quiet_storage_debug_loggers()
     state.clear()
-    state["nwb_files"] = []
+    state["files"] = []
 
     try:
         for nwb_path in context.benchmark.nwb_paths:
@@ -55,7 +55,7 @@ def setup(context: neurodatabench.RunContext) -> None:
             file_obj = remfile.File(_to_https_url(nwb_path))
             h5_file = h5py.File(file_obj, mode="r")
             nwb_io = pynwb.NWBHDF5IO(file=h5_file, mode="r", load_namespaces=True)
-            state["nwb_files"].append(nwb_io.read())
+            state["files"].append({"nwb_file": nwb_io.read()})
     except Exception:
         logger.debug("Clearing partially opened PyNWB files after setup failure.")
         state.clear()
@@ -76,11 +76,11 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
         logger.debug("Answering benchmark question %s.", question.id)
         match question.id:
             case "units_VISp_default_qc":
-                answer = _count_visp_default_qc(state["nwb_files"])
+                answer = _count_visp_default_qc(state["files"])
             case "mean_inter_spike_interval":
-                answer = _longest_isi_for_fastest_visp_unit(state["nwb_files"])
+                answer = _longest_isi_for_fastest_visp_unit(state["files"])
             case "mean_trial_length":
-                answer = _mean_trial_length(state["nwb_files"])
+                answer = _mean_trial_length(state["files"])
             case _:
                 raise ValueError(f"Unsupported benchmark question: {question.id}")
         context.submit_answer(question.id, answer)
@@ -111,25 +111,45 @@ def _to_https_url(nwb_path: str) -> str:
     return f"https://{bucket}.s3.amazonaws.com/{quote(key)}"
 
 
-def _count_visp_default_qc(nwb_files: list[pynwb.NWBFile]) -> int:
+def _count_visp_default_qc(file_records: list[dict[str, Any]]) -> int:
     """Count VISp units passing default QC across opened PyNWB NWBFiles."""
     count = 0
-    for nwb_file in nwb_files:
-        units = _units_dataframe(nwb_file)
+    for file_record in file_records:
+        if "units_frame" not in file_record:
+            nwb_file = file_record["nwb_file"]
+            if nwb_file.units is None:
+                raise ValueError(
+                    f"NWBFile {nwb_file.identifier} does not contain units.",
+                )
+            file_record["units_table"] = nwb_file.units
+            file_record["units_frame"] = nwb_file.units.to_dataframe(
+                exclude={"spike_times"},
+            )
+        units = file_record["units_frame"]
         structure = _string_array(units["structure"])
         default_qc = np.asarray(units["default_qc"], dtype=np.bool_)
         count += int(np.count_nonzero((structure == "VISp") & default_qc))
     return count
 
 
-def _longest_isi_for_fastest_visp_unit(nwb_files: list[pynwb.NWBFile]) -> float:
+def _longest_isi_for_fastest_visp_unit(file_records: list[dict[str, Any]]) -> float:
     """Return the longest ISI for the VISp unit with highest firing rate."""
-    top_nwb_file: pynwb.NWBFile | None = None
+    top_file_record: dict[str, Any] | None = None
     top_row = -1
     top_firing_rate = -np.inf
 
-    for nwb_file in nwb_files:
-        units = _units_dataframe(nwb_file)
+    for file_record in file_records:
+        nwb_file = file_record["nwb_file"]
+        if "units_frame" not in file_record:
+            if nwb_file.units is None:
+                raise ValueError(
+                    f"NWBFile {nwb_file.identifier} does not contain units.",
+                )
+            file_record["units_table"] = nwb_file.units
+            file_record["units_frame"] = nwb_file.units.to_dataframe(
+                exclude={"spike_times"},
+            )
+        units = file_record["units_frame"]
         structure = _string_array(units["structure"])
         firing_rate = np.asarray(units["firing_rate"], dtype=np.float64)
         candidate_rows = np.flatnonzero((structure == "VISp") & ~np.isnan(firing_rate))
@@ -139,31 +159,40 @@ def _longest_isi_for_fastest_visp_unit(nwb_files: list[pynwb.NWBFile]) -> float:
         local_row = int(candidate_rows[np.argmax(firing_rate[candidate_rows])])
         local_rate = float(firing_rate[local_row])
         if local_rate > top_firing_rate:
-            top_nwb_file = nwb_file
+            top_file_record = file_record
             top_row = local_row
             top_firing_rate = local_rate
 
-    if top_nwb_file is None:
+    if top_file_record is None:
         raise ValueError("No VISp unit with a finite firing_rate was found.")
 
+    top_nwb_file = top_file_record["nwb_file"]
     logger.debug(
         "Fetching spike_times for fastest VISp unit in %s at row %d.",
         top_nwb_file.identifier,
         top_row,
     )
     spike_times = np.asarray(
-        _units_table(top_nwb_file).get_unit_spike_times(top_row),
+        top_file_record["units_table"].get_unit_spike_times(top_row),
         dtype=np.float64,
     )
     return float(np.diff(spike_times).max())
 
 
-def _mean_trial_length(nwb_files: list[pynwb.NWBFile]) -> float:
+def _mean_trial_length(file_records: list[dict[str, Any]]) -> float:
     """Compute the mean trial duration across opened PyNWB NWBFiles."""
     total_duration = 0.0
     total_trials = 0
-    for nwb_file in nwb_files:
-        trials = _trials_dataframe(nwb_file)
+    for file_record in file_records:
+        if "trials_frame" not in file_record:
+            nwb_file = file_record["nwb_file"]
+            if nwb_file.trials is None:
+                raise ValueError(
+                    f"NWBFile {nwb_file.identifier} does not contain trials.",
+                )
+            file_record["trials_table"] = nwb_file.trials
+            file_record["trials_frame"] = nwb_file.trials.to_dataframe()
+        trials = file_record["trials_frame"]
         start_time = np.asarray(trials["start_time"], dtype=np.float64)
         stop_time = np.asarray(trials["stop_time"], dtype=np.float64)
         total_duration += float(np.sum(stop_time - start_time))
@@ -171,30 +200,6 @@ def _mean_trial_length(nwb_files: list[pynwb.NWBFile]) -> float:
     if total_trials == 0:
         raise ValueError("No trials were found.")
     return total_duration / total_trials
-
-
-def _units_table(nwb_file: pynwb.NWBFile) -> Any:
-    """Return the PyNWB units table from an opened NWBFile."""
-    if nwb_file.units is None:
-        raise ValueError(f"NWBFile {nwb_file.identifier} does not contain units.")
-    return nwb_file.units
-
-
-def _trials_table(nwb_file: pynwb.NWBFile) -> Any:
-    """Return the PyNWB trials table from an opened NWBFile."""
-    if nwb_file.trials is None:
-        raise ValueError(f"NWBFile {nwb_file.identifier} does not contain trials.")
-    return nwb_file.trials
-
-
-def _units_dataframe(nwb_file: pynwb.NWBFile) -> Any:
-    """Access the PyNWB units table as a DataFrame without spike_times."""
-    return _units_table(nwb_file).to_dataframe(exclude={"spike_times"})
-
-
-def _trials_dataframe(nwb_file: pynwb.NWBFile) -> Any:
-    """Access the PyNWB trials table as a DataFrame."""
-    return _trials_table(nwb_file).to_dataframe()
 
 
 def _string_array(values: Any) -> np.ndarray:
