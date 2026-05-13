@@ -15,6 +15,7 @@ alt.data_transformers.disable_max_rows()
 
 logger = logging.getLogger(__name__)
 
+_LEADERBOARD_PLOT_MAX_SECONDS = 20.0
 _DASHBOARD_COLORS: dict[str, str] = {
     "timing": "#d97706",
     "memory": "#7c3aed",
@@ -58,19 +59,31 @@ def _write_leaderboard_plot(
     if not rows:
         return
 
+    chart = _leaderboard_plot_chart(rows)
+    _save_altair_chart(results_dir / "leaderboard.html", chart)
+
+
+def _leaderboard_plot_chart(
+    rows: list[neurodatabench.models.JsonObject],
+) -> alt.LayerChart:
+    """Return the aggregate leaderboard chart with long runtimes capped."""
+    plot_rows = _leaderboard_plot_rows(rows)
+    y_encoding = alt.Y(
+        "leaderboard_label:N",
+        title=None,
+        sort=alt.SortField(field="total_seconds", order="ascending"),
+    )
+    base = alt.Chart(alt.Data(values=plot_rows))
     chart = (
-        alt.Chart(alt.Data(values=rows))
+        base
         .mark_bar()
         .encode(
             x=alt.X(
-                "total_seconds:Q",
-                title="total seconds",
+                "plot_total_seconds:Q",
+                title="total seconds (capped at 20 s)",
+                scale=alt.Scale(domain=[0.0, _LEADERBOARD_PLOT_MAX_SECONDS]),
             ),
-            y=alt.Y(
-                "leaderboard_label:N",
-                title=None,
-                sort=alt.SortField(field="total_seconds", order="ascending"),
-            ),
+            y=y_encoding,
             color=alt.Color(
                 "benchmark_id:N",
                 title="benchmark",
@@ -91,6 +104,10 @@ def _write_leaderboard_plot(
                 alt.Tooltip("datetime_utc:N", title="Run UTC"),
                 alt.Tooltip("local_cache:N", title="Local cache"),
                 alt.Tooltip("remote_cache:N", title="Remote cache"),
+                alt.Tooltip(
+                    "total_seconds_truncated_label:N",
+                    title="Truncated at 20 s",
+                ),
                 alt.Tooltip("total_seconds:Q", title="Total seconds", format=",.3f"),
                 alt.Tooltip("setup_seconds:Q", title="Setup seconds", format=",.3f"),
                 alt.Tooltip(
@@ -115,13 +132,60 @@ def _write_leaderboard_plot(
                 ),
             ],
         )
+    )
+    truncated_labels = (
+        base.transform_filter(alt.datum.total_seconds_truncated)
+        .mark_text(
+            align="right",
+            baseline="middle",
+            color="#ffffff",
+            dx=-6,
+            fontSize=11,
+        )
+        .encode(
+            x=alt.X("plot_total_seconds:Q"),
+            y=y_encoding,
+            text=alt.Text("plot_total_seconds_label:N"),
+        )
+    )
+    cap_rule = (
+        alt.Chart(
+            alt.Data(values=[{"cap_seconds": _LEADERBOARD_PLOT_MAX_SECONDS}])
+        )
+        .mark_rule(color="#374151", strokeDash=[5, 4], strokeWidth=1.5)
+        .encode(x=alt.X("cap_seconds:Q"))
+    )
+    return (
+        alt.layer(chart, cap_rule, truncated_labels)
         .properties(
-            title="NeuroDataBench Leaderboard",
+            title=alt.TitleParams(
+                text="NeuroDataBench Leaderboard",
+                anchor="start",
+            ),
             width=904,
             height=max(90, min(28 * len(rows), 720)),
         )
     )
-    _save_altair_chart(results_dir / "leaderboard.html", chart)
+
+
+def _leaderboard_plot_rows(
+    rows: list[neurodatabench.models.JsonObject],
+) -> list[neurodatabench.models.JsonObject]:
+    """Return chart rows with capped display seconds and truncation labels."""
+    plot_rows: list[neurodatabench.models.JsonObject] = []
+    for row in rows:
+        plot_row = dict(row)
+        total_seconds = _json_number_at(row, ("total_seconds",)) or 0.0
+        is_truncated = total_seconds > _LEADERBOARD_PLOT_MAX_SECONDS
+        plot_row["plot_total_seconds"] = min(
+            total_seconds,
+            _LEADERBOARD_PLOT_MAX_SECONDS,
+        )
+        plot_row["total_seconds_truncated"] = is_truncated
+        plot_row["total_seconds_truncated_label"] = "yes" if is_truncated else "no"
+        plot_row["plot_total_seconds_label"] = "> 20 s" if is_truncated else ""
+        plot_rows.append(plot_row)
+    return plot_rows
 
 
 def _result_dashboard_chart(
