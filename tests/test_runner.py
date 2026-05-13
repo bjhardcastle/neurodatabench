@@ -55,6 +55,8 @@ class RunnerTests(unittest.TestCase):
             with self.assertLogs("neurodatabench.runner", level="INFO") as logs:
                 neurodatabench.runner.main(
                     implementation_id="test-implementation",
+                    implementation_nwb_interface="pynwb",
+                    implementation_object_store_backend="s3fs",
                     implementation_local_cache=False,
                     implementation_remote_cache=False,
                     benchmark="dynamic_routing_zarr_v0",
@@ -92,6 +94,12 @@ class RunnerTests(unittest.TestCase):
             validation = _read_json(out_dir / "validation.json")
             self.assertTrue(validation["correct"])
             metadata = _read_json(out_dir / "run_metadata.json")
+            self.assertEqual(metadata["implementation"]["id"], "test-implementation")
+            self.assertEqual(metadata["implementation"]["nwb_interface"], "pynwb")
+            self.assertEqual(
+                metadata["implementation"]["object_store_backend"],
+                "s3fs",
+            )
             self.assertEqual(
                 metadata["implementation_script"],
                 {
@@ -304,6 +312,8 @@ class RunnerTests(unittest.TestCase):
 
             neurodatabench.runner.main(
                 implementation_id="fast",
+                implementation_nwb_interface="lazynwb",
+                implementation_object_store_backend="s3fs",
                 implementation_local_cache=False,
                 implementation_remote_cache=False,
                 benchmark=benchmark_path,
@@ -314,6 +324,8 @@ class RunnerTests(unittest.TestCase):
             )
             neurodatabench.runner.main(
                 implementation_id="slow",
+                implementation_nwb_interface="pynwb",
+                implementation_object_store_backend="remfile",
                 implementation_local_cache=False,
                 implementation_remote_cache=False,
                 benchmark=benchmark_path,
@@ -328,11 +340,19 @@ class RunnerTests(unittest.TestCase):
             )
             self.assertIsInstance(leaderboard, list)
             self.assertEqual([row["implementation_id"] for row in leaderboard], ["fast", "slow"])
+            self.assertEqual(
+                [row["nwb_interface"] for row in leaderboard],
+                ["lazynwb", "pynwb"],
+            )
+            self.assertEqual(
+                [row["object_store_backend"] for row in leaderboard],
+                ["s3fs", "remfile"],
+            )
             self.assertEqual([row["rank"] for row in leaderboard], [1, 2])
             self.assertTrue((results_dir / "leaderboard.csv").exists())
             self.assertTrue((results_dir / "leaderboard.html").exists())
             self.assertIn(
-                "implementation_id,benchmark_id",
+                "implementation_id,nwb_interface,object_store_backend,benchmark_id",
                 (results_dir / "leaderboard.csv").read_text(encoding="utf-8"),
             )
             self.assertTrue(

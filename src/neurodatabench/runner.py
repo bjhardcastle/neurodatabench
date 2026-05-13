@@ -205,8 +205,10 @@ def main(
     setup: Callable[[neurodatabench.models.RunContext], None],
     submit_answers: Callable[[neurodatabench.models.RunContext], None],
     implementation_id: str,
+    implementation_nwb_interface: str | None = None,
+    implementation_object_store_backend: str | None = None,
     implementation_local_cache: Literal["cold", "warm", False] | None = None,
-    implementation_remote_cache: bool = False,
+    implementation_remote_cache: bool | None = False,
     benchmark: str | Path | None = None,
     out: str | Path | None = None,
     implementation_script: str | Path | None = None,
@@ -220,6 +222,8 @@ def main(
     logger.debug("Resolving runner configuration.")
     implementation = neurodatabench.models.Implementation(
         id=implementation_id,
+        nwb_interface=implementation_nwb_interface,
+        object_store_backend=implementation_object_store_backend,
         local_cache=implementation_local_cache,
         remote_cache=implementation_remote_cache,
     )
@@ -762,6 +766,8 @@ def _leaderboard_row(run_dir: Path) -> neurodatabench.models.JsonObject | None:
         "leaderboard_label": run_dir.name,
         "datetime_utc": str(metadata.get("datetime_utc", "")),
         "implementation_id": str(implementation.get("id", "unknown")),
+        "nwb_interface": implementation.get("nwb_interface"),
+        "object_store_backend": implementation.get("object_store_backend"),
         "benchmark_id": str(benchmark.get("id", "unknown")),
         "nwb_format": str(benchmark.get("nwb_format", "unknown")),
         "local_cache": str(implementation.get("local_cache", "")),
@@ -793,6 +799,8 @@ def _write_leaderboard_csv(
     fieldnames = [
         "rank",
         "implementation_id",
+        "nwb_interface",
+        "object_store_backend",
         "benchmark_id",
         "nwb_format",
         "local_cache",

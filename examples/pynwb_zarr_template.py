@@ -161,6 +161,8 @@ def _mean_trial_length(nwb_paths: list[str]) -> float:
 if __name__ == "__main__":
     neurodatabench.main(
         implementation_id="pynwb_hdmf_zarr_direct",
+        implementation_nwb_interface=None,
+        implementation_object_store_backend="s3fs",
         implementation_local_cache="cold",
         implementation_remote_cache=False,
         benchmark="dynamic_routing_zarr_v0",

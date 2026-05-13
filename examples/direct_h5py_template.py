@@ -187,7 +187,9 @@ def _read_string_array(dataset: h5py.Dataset) -> np.ndarray:
 
 if __name__ == "__main__":
     neurodatabench.main(
-        implementation_id="direct_h5py_remfile",
+        implementation_id="direct_h5py",
+        implementation_nwb_interface=None,
+        implementation_object_store_backend="remfile",
         implementation_local_cache=None,
         implementation_remote_cache=None,
         benchmark="dynamic_routing_hdf5_v0",

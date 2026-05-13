@@ -115,6 +115,8 @@ def teardown(context: neurodatabench.RunContext) -> None:
 if __name__ == "__main__":
     neurodatabench.main(
         implementation_id="lazynwb_v1_dev2",
+        implementation_nwb_interface="lazynwb",
+        implementation_object_store_backend=None,
         implementation_local_cache="cold",
         implementation_remote_cache=False,
         benchmark="dynamic_routing_hdf5_v0",

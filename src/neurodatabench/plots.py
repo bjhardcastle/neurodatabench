@@ -100,6 +100,8 @@ def _leaderboard_plot_chart(
             tooltip=[
                 alt.Tooltip("rank:Q", title="Rank"),
                 alt.Tooltip("implementation_id:N", title="Implementation"),
+                alt.Tooltip("nwb_interface:N", title="NWB interface"),
+                alt.Tooltip("object_store_backend:N", title="Object store backend"),
                 alt.Tooltip("benchmark_id:N", title="Benchmark"),
                 alt.Tooltip("datetime_utc:N", title="Run UTC"),
                 alt.Tooltip("local_cache:N", title="Local cache"),
@@ -250,6 +252,16 @@ def _dashboard_title(metadata: neurodatabench.models.JsonObject) -> alt.TitlePar
         _metadata_label_value(metadata, "hostname", "host"),
         _metadata_label_value(metadata, "benchmark_harness_version", "harness"),
         _metadata_label_value(metadata, ("benchmark", "nwb_format"), "format"),
+        _metadata_label_value(
+            metadata,
+            ("implementation", "nwb_interface"),
+            "NWB interface",
+        ),
+        _metadata_label_value(
+            metadata,
+            ("implementation", "object_store_backend"),
+            "object store",
+        ),
         _metadata_label_value(
             metadata,
             ("implementation", "local_cache"),

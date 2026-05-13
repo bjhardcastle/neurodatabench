@@ -212,6 +212,8 @@ def _string_array(values: Any) -> np.ndarray:
 if __name__ == "__main__":
     neurodatabench.main(
         implementation_id="pynwb_hdf5_nwbfile",
+        implementation_nwb_interface="pynwb",
+        implementation_object_store_backend="remfile",
         implementation_local_cache=None,
         implementation_remote_cache=None,
         benchmark="dynamic_routing_hdf5_v0",

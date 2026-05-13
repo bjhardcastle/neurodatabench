@@ -39,9 +39,13 @@ class Implementation:
     """Metadata about a particular implementation of the benchmark that can't be obtained programatically."""
 
     id: str
+    nwb_interface: str | None
+    """The NWB API or interface used to answer benchmark questions, if any"""
+    object_store_backend: str | None
+    """The object-store access backend used by the implementation, if any"""
     local_cache: Literal["cold", "warm", False] | None
     """The state of the implementation's local cache, if any"""
-    remote_cache: bool
+    remote_cache: bool | None
     """Whether the implementation depends on a pre-computed cache object ranges (e.g. kerchunk/lindi)"""
 
 
