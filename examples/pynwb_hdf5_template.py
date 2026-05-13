@@ -1,0 +1,222 @@
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#   "altair",
+#   "h5py",
+#   "numpy",
+#   "pandas",
+#   "psutil",
+#   "pydantic>=2.13.4",
+#   "pydantic-settings>=2.14.1",
+#   "pynwb",
+#   "remfile",
+# ]
+# ///
+
+"""Runnable PyNWB/HDF5 NWBFile implementation for the packaged NWB benchmark."""
+
+from __future__ import annotations
+
+import logging
+import sys
+from pathlib import Path
+from typing import Any
+from urllib.parse import quote
+
+_REPO_SRC = Path(__file__).resolve().parents[1] / "src"
+if _REPO_SRC.exists():
+    sys.path.insert(0, _REPO_SRC.as_posix())
+
+import h5py
+import numpy as np
+import pynwb
+import remfile
+
+import neurodatabench
+
+logger = logging.getLogger(__name__)
+
+state = {}
+
+
+def setup(context: neurodatabench.RunContext) -> None:
+    """Open every benchmark NWB file as a PyNWB NWBFile and store it in state."""
+    logger.debug(
+        "Opening %d NWB files through PyNWB NWBHDF5IO.",
+        len(context.benchmark.nwb_paths),
+    )
+    _quiet_storage_debug_loggers()
+    state.clear()
+    state["nwb_files"] = []
+
+    try:
+        for nwb_path in context.benchmark.nwb_paths:
+            logger.debug("Opening PyNWB NWBFile for %s.", nwb_path)
+            file_obj = remfile.File(_to_https_url(nwb_path))
+            h5_file = h5py.File(file_obj, mode="r")
+            nwb_io = pynwb.NWBHDF5IO(file=h5_file, mode="r", load_namespaces=True)
+            state["nwb_files"].append(nwb_io.read())
+    except Exception:
+        logger.debug("Clearing partially opened PyNWB files after setup failure.")
+        state.clear()
+        raise
+
+
+def clear_cache(context: neurodatabench.RunContext) -> None:
+    """Clear implementation-managed caches before timed benchmark phases."""
+    logger.debug(
+        "No local PyNWB/remfile disk cache to clear for %d NWB paths.",
+        len(context.benchmark.nwb_paths),
+    )
+
+
+def submit_answers(context: neurodatabench.RunContext) -> None:
+    """Submit answers for every benchmark question."""
+    for question in context.benchmark.questions:
+        logger.debug("Answering benchmark question %s.", question.id)
+        match question.id:
+            case "units_VISp_default_qc":
+                answer = _count_visp_default_qc(state["nwb_files"])
+            case "mean_inter_spike_interval":
+                answer = _longest_isi_for_fastest_visp_unit(state["nwb_files"])
+            case "mean_trial_length":
+                answer = _mean_trial_length(state["nwb_files"])
+            case _:
+                raise ValueError(f"Unsupported benchmark question: {question.id}")
+        context.submit_answer(question.id, answer)
+
+
+def teardown(context: neurodatabench.RunContext) -> None:
+    """Release PyNWB objects opened during setup."""
+    logger.debug(
+        "Clearing PyNWB NWBFile state for %d NWB paths.",
+        len(context.benchmark.nwb_paths),
+    )
+    state.clear()
+
+
+def _quiet_storage_debug_loggers() -> None:
+    """Keep benchmark debug logs focused on implementation-level events."""
+    for logger_name in ("requests", "urllib3"):
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
+
+
+def _to_https_url(nwb_path: str) -> str:
+    """Convert a public S3 URI to the HTTPS URL expected by remfile."""
+    if nwb_path.startswith("https://") or nwb_path.startswith("http://"):
+        return nwb_path
+    if not nwb_path.startswith("s3://"):
+        raise ValueError(f"Unsupported remote NWB path: {nwb_path}")
+    bucket, key = nwb_path.removeprefix("s3://").split("/", maxsplit=1)
+    return f"https://{bucket}.s3.amazonaws.com/{quote(key)}"
+
+
+def _count_visp_default_qc(nwb_files: list[pynwb.NWBFile]) -> int:
+    """Count VISp units passing default QC across opened PyNWB NWBFiles."""
+    count = 0
+    for nwb_file in nwb_files:
+        units = _units_dataframe(nwb_file)
+        structure = _string_array(units["structure"])
+        default_qc = np.asarray(units["default_qc"], dtype=np.bool_)
+        count += int(np.count_nonzero((structure == "VISp") & default_qc))
+    return count
+
+
+def _longest_isi_for_fastest_visp_unit(nwb_files: list[pynwb.NWBFile]) -> float:
+    """Return the longest ISI for the VISp unit with highest firing rate."""
+    top_nwb_file: pynwb.NWBFile | None = None
+    top_row = -1
+    top_firing_rate = -np.inf
+
+    for nwb_file in nwb_files:
+        units = _units_dataframe(nwb_file)
+        structure = _string_array(units["structure"])
+        firing_rate = np.asarray(units["firing_rate"], dtype=np.float64)
+        candidate_rows = np.flatnonzero((structure == "VISp") & ~np.isnan(firing_rate))
+        if candidate_rows.size == 0:
+            logger.debug("No VISp units with firing_rate in %s.", nwb_file.identifier)
+            continue
+        local_row = int(candidate_rows[np.argmax(firing_rate[candidate_rows])])
+        local_rate = float(firing_rate[local_row])
+        if local_rate > top_firing_rate:
+            top_nwb_file = nwb_file
+            top_row = local_row
+            top_firing_rate = local_rate
+
+    if top_nwb_file is None:
+        raise ValueError("No VISp unit with a finite firing_rate was found.")
+
+    logger.debug(
+        "Fetching spike_times for fastest VISp unit in %s at row %d.",
+        top_nwb_file.identifier,
+        top_row,
+    )
+    spike_times = np.asarray(
+        _units_table(top_nwb_file).get_unit_spike_times(top_row),
+        dtype=np.float64,
+    )
+    return float(np.diff(spike_times).max())
+
+
+def _mean_trial_length(nwb_files: list[pynwb.NWBFile]) -> float:
+    """Compute the mean trial duration across opened PyNWB NWBFiles."""
+    total_duration = 0.0
+    total_trials = 0
+    for nwb_file in nwb_files:
+        trials = _trials_dataframe(nwb_file)
+        start_time = np.asarray(trials["start_time"], dtype=np.float64)
+        stop_time = np.asarray(trials["stop_time"], dtype=np.float64)
+        total_duration += float(np.sum(stop_time - start_time))
+        total_trials += int(start_time.size)
+    if total_trials == 0:
+        raise ValueError("No trials were found.")
+    return total_duration / total_trials
+
+
+def _units_table(nwb_file: pynwb.NWBFile) -> Any:
+    """Return the PyNWB units table from an opened NWBFile."""
+    if nwb_file.units is None:
+        raise ValueError(f"NWBFile {nwb_file.identifier} does not contain units.")
+    return nwb_file.units
+
+
+def _trials_table(nwb_file: pynwb.NWBFile) -> Any:
+    """Return the PyNWB trials table from an opened NWBFile."""
+    if nwb_file.trials is None:
+        raise ValueError(f"NWBFile {nwb_file.identifier} does not contain trials.")
+    return nwb_file.trials
+
+
+def _units_dataframe(nwb_file: pynwb.NWBFile) -> Any:
+    """Access the PyNWB units table as a DataFrame without spike_times."""
+    return _units_table(nwb_file).to_dataframe(exclude={"spike_times"})
+
+
+def _trials_dataframe(nwb_file: pynwb.NWBFile) -> Any:
+    """Access the PyNWB trials table as a DataFrame."""
+    return _trials_table(nwb_file).to_dataframe()
+
+
+def _string_array(values: Any) -> np.ndarray:
+    """Convert a table column to a NumPy string array."""
+    raw_values = np.asarray(values)
+    return np.asarray(
+        [
+            value.decode("utf-8") if isinstance(value, bytes) else str(value)
+            for value in raw_values
+        ],
+        dtype=str,
+    )
+
+
+if __name__ == "__main__":
+    neurodatabench.main(
+        implementation_id="pynwb_hdf5_nwbfile",
+        implementation_local_cache=None,
+        implementation_remote_cache=None,
+        benchmark="dynamic_routing_hdf5_v0",
+        setup=setup,
+        clear_cache=clear_cache,
+        submit_answers=submit_answers,
+        teardown=teardown,
+    )
