@@ -25,6 +25,7 @@
 * `neurodatabench.__version__` is read from installed package metadata via `importlib.metadata`, so `pyproject.toml` remains the single version source.
 * Successful result directories write environment package pins to `requirements.txt`. The file uses requirements-style `name==version` lines, not a mixed `*.lock.txt` naming convention.
 * `scripts/run_benchmark_matrix.py` orchestrates the current example helpers across lazynwb pre-1.0/1.0.0dev3, HDF5/Zarr benchmarks, storage backend labels, direct h5py, direct Zarr v2/v3 for Zarr-capable backends (`s3fs`, `obstore`), and true PyNWB HDF5 combinations. It forwards per-run metadata through `NDB_BENCHMARK`, `NDB_IMPLEMENTATION_ID`, `NDB_OBJECT_STORE_BACKEND`, `NDB_LOCAL_CACHE`, and optional Zarr pins, appending JSONL status to `results/matrix_status.jsonl` by default. Lazynwb matrix entries get stable cache DB paths under `results/matrix_caches/`, so matching 1.0 cold/warm runs share a cache path. Run `uv run python scripts/run_benchmark_matrix.py --dry-run` to inspect the full command set before spending network time.
+* Lazynwb 1.0/dev matrix runs must not receive `LAZYNWB_USE_OBSTORE` or `LAZYNWB_USE_REMFILE`; 1.0 implicitly uses obstore, and forcing those environment settings made HDF5 runs jump from about 5-6 seconds to about 13-15 seconds. Keep those backend-toggle env vars scoped to `examples/lazynwb_v0.py`.
 
 
 ## Design decisions

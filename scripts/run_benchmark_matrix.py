@@ -225,7 +225,7 @@ def _command_for(run: MatrixRun, args: argparse.Namespace) -> list[str]:
     if args.timeout_seconds is not None:
         command.extend(["--timeout-seconds", str(args.timeout_seconds)])
     if args.no_timeout:
-        command.append("--no-timeout")
+        command.append("--disable-timeout")
     return command
 
 
@@ -243,15 +243,16 @@ def _environment_for(run: MatrixRun) -> dict[str, str]:
         env["NDB_LAZYNWB_CACHE_PATH"] = str(_REPO_ROOT / "results" / "matrix_caches" / cache_name)
     if run.zarr_major_version is not None:
         env["NDB_ZARR_MAJOR_VERSION"] = run.zarr_major_version
-    if run.object_store_backend == "s3fs":
-        env["LAZYNWB_USE_OBSTORE"] = "false"
-        env["LAZYNWB_USE_REMFILE"] = "false"
-    elif run.object_store_backend == "remfile":
-        env["LAZYNWB_USE_OBSTORE"] = "false"
-        env["LAZYNWB_USE_REMFILE"] = "true"
-    elif run.object_store_backend == "obstore":
-        env["LAZYNWB_USE_OBSTORE"] = "true"
-        env["LAZYNWB_USE_REMFILE"] = "false"
+    if run.helper == "examples/lazynwb_v0.py":
+        if run.object_store_backend == "s3fs":
+            env["LAZYNWB_USE_OBSTORE"] = "false"
+            env["LAZYNWB_USE_REMFILE"] = "false"
+        elif run.object_store_backend == "remfile":
+            env["LAZYNWB_USE_OBSTORE"] = "false"
+            env["LAZYNWB_USE_REMFILE"] = "true"
+        elif run.object_store_backend == "obstore":
+            env["LAZYNWB_USE_OBSTORE"] = "true"
+            env["LAZYNWB_USE_REMFILE"] = "false"
     return env
 
 
