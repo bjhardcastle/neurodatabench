@@ -1,28 +1,56 @@
 # NWB benchmark implementation
 
+
 ## Design decisions
 
 * Single user-edited script executes the benchmark.
-* Harness is imported only inside `if __name__ == "__main__":`
-* Implementation import time is measured.
-* Setup is not timed.
-* Total ordered-question-loop time is measured.
-* Per-question times are measured.
-* Validation happens only after all timed questions finish.
-* `questions.json` contains answers.
-* Do not pass answers to implementation.
-* `dataset_id` appears once at top of `questions.json`.
+* Packaged benchmark JSON resources are covered by unittest discovery and validated through the `Benchmark` Pydantic dataclass schema.
+* Runtime code and tests should remain compatible with Python 3.10+.
+* Runtime harness imports stay inside `if __name__ == "__main__":`.
+* Implementation import time is not explicitly timed or recorded.
+* Setup is timed separately and included in top-line measured total time.
+* `answer_questions()` duration is timed separately from setup.
+* Top-line `total_duration_ns` measures from immediately before `setup()` through `answer_questions()` completion.
+* Per-question timings are not measured by the harness when the implementation answers the full list.
+* Validation happens only after setup, answer, and total timing finish.
+* `questions.json` contains dataset paths and answers.
+* Do not pass expected answers to implementation.
+* `dataset_paths` appears once at the top of `questions.json` as a list of local paths or remote URIs.
+* There is no separate dataset manifest and no dataset ID indirection.
+* Dataset files do not carry asset IDs, checksums, byte sizes, or separate URI fields.
+* Question files do not require `schema_version`; add a format version only if the runner later supports multiple incompatible question-file shapes.
+* Canonical benchmark questions are distributed as package data under `src/neurodatabench/questions/`.
+* Packaged question filenames are benchmark names, e.g. `visual_coding_v1.json`, so installed users can run without locating repo files.
 * No `order` field; list order is canonical.
 * No `depends_on`.
 * No `input_files`.
-* All files for the dataset are passed to `setup()`.
+* No validation DSL in `questions.json`; validation behavior is defined by the harness.
+* Float comparisons use `numpy.isclose` defaults.
+* Answers may be JSON scalars, lists, or objects. Lists are valid when a question expects ordered multiple values.
+* The implementation receives the full ordered question list without expected answers, fills each question's `answer` field, and returns the completed list.
+* Prefer an explicit answer-submission interface over implicit mutation of question objects; the current `question.answer = ...` sketch is a placeholder if a clearer sink/callback API is adopted.
+* A localhost answer server launched by `main()` is useful as a future out-of-process or cross-language adapter, but it is too much ceremony for the default in-process Python template.
+* Default Python submissions should use an explicit in-process answer sink, e.g. `submit_answer(question_id, answer)`, so answers are visible and intentional without adding ports, background threads, request serialization, or server lifecycle failure modes.
+* If answers are submitted through a sink, do not require canonical answer order. Capture each submitted answer's timestamp/order as observational detail, validate by question ID, and treat total measured time as the primary comparable metric. Per-answer timing/order is bonus diagnostic data that usually requires implementation context to interpret fairly.
+* Submission state is module-owned. `setup()` must reset module-level state for each measured run; the runner must not inspect or pass state between hooks.
+* `RunContext` carries dataset paths, output directory, scratch directory, and input provenance needed by implementation hooks.
+* Use full type hints throughout the harness, submission template, tests, and packaging code.
+* Keep structured models sparse. Prefer plain JSON objects for question specs and metadata records; use dataclasses only where they make the hook/result contract clearer.
+* Do not write run status or captured error artifacts. User-code exceptions should bubble, and validation correctness is the pass/fail signal.
+* Pydantic model creation has measurable overhead; avoid Pydantic in the user implementation top level or timed setup/answer path.
+* The user script must not define a top-level `IMPLEMENTATION` metadata object. Pass implementation metadata as typed arguments to `main()` inside `if __name__ == "__main__":`.
+* `main(questions=..., out=...)` can provide script-level defaults.
+* CLI `--questions` and `--out` are mutually exclusive with matching `main()` defaults; raise a clear error if both are set, because silent overrides make benchmark provenance ambiguous.
+* Dataset paths are available through `RunContext`.
+* Cache type is declared as free-form implementation metadata; `clear_cache()` is only an optional hook for clearing implementation-managed local caches.
+* `clear_cache()` is untimed and called only before the first measured run; it is not called between repeated runs.
 * No `pip freeze`.
 * Use uv inline script metadata for declared dependencies.
 * Harness records platform, datetime, Python, key package versions, CPU, memory, disk, network counters, profiling samples.
 * Implementer declares only:
 
   * implementation name
-  * declared cache state: `cold`, `warm`, `dandi_pre_cache`, or `other`
+  * cache type
   * optional notes
 
 ---
@@ -30,23 +58,48 @@
 # Repo skeleton
 
 ```text
-nwb_benchmark/
-  __init__.py
-  runner.py
-  schemas.py
-  metadata.py
-  profiling.py
-  validation.py
-  packaging.py
-  templates/
-    submission_template.py
-  examples/
-    manifest.json
-    questions.json
-  tests/
-    test_validation.py
-    test_inline_metadata.py
-    test_runner_smoke.py
+pyproject.toml
+src/
+  neurodatabench/
+    __init__.py
+    models.py
+    runner.py
+    schemas.py
+    metadata.py
+    profiling.py
+    validation.py
+    packaging.py
+    questions/
+      visual_coding_v1.json
+templates/
+  submission_template.py
+tests/
+  test_validation.py
+  test_inline_metadata.py
+  test_runner_smoke.py
+```
+
+---
+
+# Package Data
+
+Questions must be included in wheels and sdists. The exact `pyproject.toml`
+syntax depends on the build backend, but the package-data contract is:
+
+```toml
+[tool.setuptools.package-data]
+neurodatabench = ["py.typed", "questions/*.json"]
+```
+
+Rules:
+
+```text
+Packaged question resource names are benchmark names.
+The runner accepts either a filesystem path or a packaged question name.
+Example: --questions visual_coding_v1
+Submission scripts may pass `questions="visual_coding_v1"` to `main()` as a default.
+Raise an error if both CLI `--questions` and `main(questions=...)` are set.
+The local smoke test should exercise packaged question resources, not only repo-relative files.
 ```
 
 ---
@@ -55,42 +108,14 @@ nwb_benchmark/
 
 ## 1. Define schemas
 
-### `manifest.json`
-
-```json
-{
-  "schema_version": "0.3",
-  "benchmark_id": "nwb_access_benchmark_v1",
-  "datasets": [
-    {
-      "dataset_id": "visual_coding_v1",
-      "name": "Visual coding NWB benchmark dataset",
-      "description": "Benchmark dataset",
-      "files": [
-        {
-          "asset_id": "session_001",
-          "path": "/data/nwb/session_001.nwb",
-          "uri": null,
-          "sha256": null,
-          "size_bytes": null
-        }
-      ]
-    }
-  ]
-}
-```
-
 ### `questions.json`
 
 ```json
 {
-  "schema_version": "0.3",
   "benchmark_id": "nwb_access_benchmark_v1",
-  "dataset_id": "visual_coding_v1",
-  "validation": {
-    "float_abs_tol": 1e-9,
-    "float_rel_tol": 1e-9
-  },
+  "dataset_paths": [
+    "/data/nwb/session_001.nwb"
+  ],
   "questions": [
     {
       "id": "q001_units_VISp_default_qc",
@@ -101,6 +126,11 @@ nwb_benchmark/
       "id": "q002_mean_firing_rate_previous_units",
       "text": "For the units identified previously, what is the mean firing rate?",
       "answer": 4.82
+    },
+    {
+      "id": "q003_first_five_unit_ids",
+      "text": "What are the first five unit IDs after applying the same filters?",
+      "answer": [101, 204, 205, 301, 455]
     }
   ]
 }
@@ -111,9 +141,16 @@ Rules:
 ```text
 questions[*].answer defines expected type.
 No answer_type.
+Answers may be JSON scalars, lists, or objects.
+No validation config or validation DSL in questions.json.
+Floats are compared with numpy.isclose defaults.
 No order.
 No depends_on.
 No input_files.
+Dataset paths are local paths or remote URIs.
+No dataset_id.
+No separate dataset manifest.
+No dataset file asset_id, uri, sha256, or size_bytes fields.
 ```
 
 ---
@@ -124,6 +161,7 @@ No input_files.
 # /// script
 # requires-python = ">=3.11"
 # dependencies = [
+#   "neurodatabench",
 #   "pynwb",
 #   "h5py",
 #   "numpy",
@@ -131,91 +169,124 @@ No input_files.
 # ]
 # ///
 
-from time import perf_counter_ns as _perf_counter_ns
+"""Submission template for a NeuroDataBench benchmark implementation."""
 
-_IMPLEMENTATION_IMPORT_START_NS = _perf_counter_ns()
+from __future__ import annotations
 
-# Implementation imports go here.
-# They are included in implementation import timing.
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from neurodatabench.models import (
+        QuestionForImplementation,
+        RunContext,
+    )
+
+
+state: dict[str, object] | None = None
+
+# Implementation dependency imports go here.
 import numpy as np
 import pynwb
 
-IMPLEMENTATION = {
-    "name": "replace-me",
-    "declared_cache_state": "cold",  # cold | warm | dandi_pre_cache | other
-    "notes": ""
-}
 
-
-def setup(dataset, scratch_dir, context):
+def setup(context: RunContext) -> None:
     """
-    Untimed.
+    Timed separately and included in total_duration_ns.
 
-    dataset:
-        {
-          "dataset_id": "...",
-          "files": [...]
-        }
-
-    scratch_dir:
-        Path-like temporary directory for this run.
-
-    context:
-        runner-provided metadata.
+    The harness provides typed run context with dataset path, output directory,
+    and scratch directory. Reset module-level state for this measured run.
     """
-    return {
-        "dataset": dataset,
-        "scratch_dir": scratch_dir
+    global state
+
+    state = {
+        "nwb_file": pynwb.read_nwb(context.dataset_paths[0]),
+        "scratch_dir": context.scratch_dir,
     }
 
 
-def warmup(state, questions):
+def clear_cache(context: RunContext) -> None:
     """
     Optional. Untimed.
-    Return value ignored.
+
+    Clear implementation-managed local caches before the first measured run.
+    The harness must not call this between repeated runs.
     """
     return None
 
 
-def answer_question(question, state):
+def answer_questions(
+    questions: list[QuestionForImplementation],
+) -> list[QuestionForImplementation]:
     """
-    Timed.
+    Timed separately and included in total_duration_ns.
 
-    question does NOT contain answer.
+    Questions do NOT contain expected answers.
     Question order is canonical.
-    May mutate state.
-    Must return JSON-serializable answer.
+    The harness calls this function once for the full ordered list, so local
+    variables are fine for transient work. Use module-level state for setup
+    artifacts, intermediates reused by later questions, or values needed by
+    teardown. May mutate state and question.answer fields.
+    Must return the completed question list.
     """
-    qid = question["id"]
+    current_state = state
+    if current_state is None:
+        raise RuntimeError("setup() must run before answer_questions()")
 
-    if qid == "q001_units_VISp_default_qc":
-        return 123
+    for question in questions:
+        qid = question.id
 
-    raise NotImplementedError(qid)
+        if qid == "q001_units_VISp_default_qc":
+            filtered_unit_ids = [101, 204, 205, 301, 455] + list(range(1000, 1118))
+            current_state["filtered_unit_ids"] = filtered_unit_ids
+            question.answer = len(filtered_unit_ids)
+            continue
+
+        if qid == "q002_mean_firing_rate_previous_units":
+            filtered_unit_ids = current_state["filtered_unit_ids"]
+            if filtered_unit_ids is None:
+                raise RuntimeError("q002 requires q001 to run first")
+
+            mean_firing_rate = 4.82
+            current_state["mean_firing_rate"] = mean_firing_rate
+            question.answer = mean_firing_rate
+            continue
+
+        if qid == "q003_first_five_unit_ids":
+            filtered_unit_ids = current_state["filtered_unit_ids"]
+            if filtered_unit_ids is None:
+                raise RuntimeError("q003 requires q001 to run first")
+
+            question.answer = filtered_unit_ids[:5]
+            continue
+
+        raise NotImplementedError(qid)
+
+    return questions
 
 
-def teardown(state):
+def teardown() -> None:
     """
     Untimed.
     """
+    global state
+
+    state = None
     return None
 
 
-_IMPLEMENTATION_IMPORT_END_NS = _perf_counter_ns()
-
-
 if __name__ == "__main__":
-    from nwb_benchmark.runner import main
+    from neurodatabench.runner import main
 
     main(
-        implementation=IMPLEMENTATION,
+        implementation_name="replace-me",
+        implementation_cache_type="cold",
+        implementation_notes="",
+        questions="visual_coding_v1",
+        out="results",
+        clear_cache=clear_cache,
         setup=setup,
-        warmup=warmup,
-        answer_question=answer_question,
+        answer_questions=answer_questions,
         teardown=teardown,
-        implementation_import_duration_ns=(
-            _IMPLEMENTATION_IMPORT_END_NS - _IMPLEMENTATION_IMPORT_START_NS
-        ),
     )
 ```
 
@@ -225,25 +296,13 @@ if __name__ == "__main__":
 
 ```bash
 python submission.py run \
-  --manifest manifest.json \
-  --questions questions.json \
-  --out results \
-  --warmup none
-```
-
-```bash
-python submission.py run \
-  --manifest manifest.json \
-  --questions questions.json \
-  --out results \
-  --warmup full \
-  --declared-cache-state warm
+  --questions visual_coding_v1 \
+  --out results
 ```
 
 ```bash
 python submission.py smoke \
-  --manifest manifest.json \
-  --questions questions.json
+  --questions visual_coding_v1
 ```
 
 CLI options:
@@ -251,37 +310,130 @@ CLI options:
 ```text
 run
 smoke
---manifest PATH
---questions PATH
+--questions PATH_OR_PACKAGED_NAME
 --out DIR
---warmup none|full
---declared-cache-state cold|warm|dandi_pre_cache|other
 --profile-interval-ms 250
---stop-on-error
+```
+
+`--questions` and `--out` may be omitted only when the submission script passes
+`questions=...` and `out=...` to `main()`. If both the CLI and `main()` provide
+the same setting, raise a clear error instead of choosing one.
+
+---
+
+## 4. Typed models
+
+```python
+# src/neurodatabench/models.py
+
+"""Typed data structures for NeuroDataBench inputs and outputs."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TypeAlias
+
+JsonPrimitive: TypeAlias = str | int | float | bool | None
+JsonValue: TypeAlias = JsonPrimitive | list["JsonValue"] | dict[str, "JsonValue"]
+JsonObject: TypeAlias = dict[str, JsonValue]
+
+
+@dataclass(frozen=True, slots=True)
+class RunContext:
+    """Runner-provided context passed to implementation hooks."""
+
+    dataset_paths: list[str]
+    out_dir: Path
+    scratch_dir: Path
+    questions_source: str
+    submission_path: Path
+
+
+@dataclass(slots=True)
+class QuestionForImplementation:
+    """Question passed to user code; implementation fills answer."""
+
+    id: str
+    text: str
+    answer: JsonValue | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SubmittedAnswer:
+    """One normalized answer returned by the implementation."""
+
+    index: int
+    question_id: str
+    answer: JsonValue | None
+
+
+@dataclass(frozen=True, slots=True)
+class RunTimings:
+    """Timing summary for a run."""
+
+    setup_duration_ns: int | None
+    answer_questions_duration_ns: int | None
+    total_duration_ns: int | None
+    setup_timed: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class ValidationResult:
+    """Validation outcome for one question."""
+
+    index: int
+    question_id: str
+    correct: bool
+    reason: str
+    actual_question_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ValidationSummary:
+    """Validation summary for all questions."""
+
+    correct: bool
+    num_questions: int
+    num_submitted: int
+    num_correct: int
+    results: list[ValidationResult]
+
+
+```
+
+Rules:
+
+```text
+Use dataclasses for public hook/result records that benefit from typed attributes.
+Keep question specs, run metadata, inline script metadata, and profiler records as plain JSON objects.
+Do not create run status or captured error artifacts.
+Avoid Pydantic model creation in the submission module top level and timed setup/answer path.
 ```
 
 ---
 
-## 4. Runner lifecycle
+## 5. Runner lifecycle
 
 ```text
 parse args
-load manifest
 load questions
 validate schema shape
-select dataset using questions.dataset_id
-strip answer fields before implementation sees questions
+build run context
+prepare implementation questions with blank answer fields
 collect pre-run metadata
-call setup()                       # untimed
-run warmup if requested             # untimed
+if first measured run and clear_cache is defined:
+    call clear_cache(context)       # untimed
 start profiler
-start total question-loop timer
-for question in ordered questions:
-    start per-question timer
-    call answer_question()
-    stop per-question timer
-    store answer in memory
-stop total question-loop timer
+start total timer
+start setup timer
+call setup(context)
+stop setup timer
+start answer_questions timer
+call answer_questions(questions)
+stop answer_questions timer
+stop total timer
+normalize answered questions
 stop profiler
 call teardown()                     # untimed
 write answers
@@ -290,173 +442,161 @@ validate answers                    # after timing only
 write metadata
 write profile summary
 package result bundle
+if validation.correct is false:
+    exit nonzero
 ```
 
 ---
 
-## 5. Runner skeleton
+## 6. Runner skeleton
 
 ```python
-# nwb_benchmark/runner.py
+# src/neurodatabench/runner.py
+
+"""Command-line runner for executing one NeuroDataBench submission."""
 
 from __future__ import annotations
 
 import argparse
-import json
 import sys
-import traceback
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter_ns
-from typing import Any, Callable
 
-from .metadata import collect_run_metadata
-from .profiling import Profiler
-from .schemas import load_manifest, load_questions, select_dataset, strip_answers
-from .validation import validate_answers
-from .packaging import write_result_bundle
+from neurodatabench.metadata import collect_run_metadata
+from neurodatabench.models import (
+    JsonObject,
+    QuestionForImplementation,
+    RunContext,
+    RunTimings,
+    SubmittedAnswer,
+)
+from neurodatabench.packaging import write_result_bundle
+from neurodatabench.profiling import Profiler
+from neurodatabench.schemas import (
+    dataset_paths_from_questions,
+    question_rows,
+    load_questions,
+    prepare_questions_for_implementation,
+)
+from neurodatabench.validation import validate_answers
+
+
+@dataclass(frozen=True)
+class RunArgs:
+    """Parsed CLI arguments for one benchmark run."""
+
+    command: str
+    questions: str
+    out: Path
+    profile_interval_ms: int
 
 
 def main(
-    implementation: dict[str, Any],
-    setup: Callable,
-    warmup: Callable | None,
-    answer_question: Callable,
-    teardown: Callable | None,
-    implementation_import_duration_ns: int,
+    *,
+    implementation_name: str,
+    implementation_cache_type: str,
+    setup: Callable[[RunContext], None],
+    answer_questions: Callable[
+        [list[QuestionForImplementation]],
+        list[QuestionForImplementation],
+    ],
+    questions: str | Path | None = None,
+    out: str | Path | None = None,
+    clear_cache: Callable[[RunContext], None] | None = None,
+    teardown: Callable[[], None] | None = None,
+    implementation_notes: str = "",
 ) -> None:
-    args = parse_args()
+    """Run a benchmark submission and write result artifacts."""
+    args = resolve_run_args(default_questions=questions, default_out=out)
 
-    out_dir = Path(args.out)
+    out_dir = args.out
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    manifest = load_manifest(Path(args.manifest))
-    question_spec = load_questions(Path(args.questions))
+    question_spec = load_questions(args.questions)
 
-    dataset_id = question_spec["dataset_id"]
-    dataset = select_dataset(manifest, dataset_id)
+    dataset_paths = dataset_paths_from_questions(question_spec)
 
-    questions_with_answers = question_spec["questions"]
-    questions_for_impl = strip_answers(questions_with_answers)
-
-    declared_cache_state = (
-        args.declared_cache_state
-        or implementation.get("declared_cache_state")
-        or "other"
-    )
-
-    metadata = collect_run_metadata(
-        implementation=implementation,
-        declared_cache_state=declared_cache_state,
-        manifest_path=Path(args.manifest),
-        questions_path=Path(args.questions),
-        submission_path=Path(sys.argv[0]),
-        implementation_import_duration_ns=implementation_import_duration_ns,
-        warmup=args.warmup,
-    )
+    questions_with_answers = question_rows(question_spec)
+    questions_for_impl = prepare_questions_for_implementation(questions_with_answers)
 
     scratch_dir = out_dir / "scratch"
     scratch_dir.mkdir(exist_ok=True)
 
-    context = {
-        "dataset_id": dataset_id,
-        "declared_cache_state": declared_cache_state,
-        "warmup": args.warmup,
-        "out_dir": str(out_dir),
-    }
+    context = RunContext(
+        dataset_paths=dataset_paths,
+        out_dir=out_dir,
+        scratch_dir=scratch_dir,
+        questions_source=args.questions,
+        submission_path=Path(sys.argv[0]),
+    )
 
-    state = None
-    answers = []
-    per_question_timings = []
-    total_questions_duration_ns = None
-    status = "ok"
-    error = None
+    metadata: JsonObject = collect_run_metadata(
+        context=context,
+        implementation_name=implementation_name,
+        implementation_cache_type=implementation_cache_type,
+        implementation_notes=implementation_notes,
+    )
+
+    answers: list[SubmittedAnswer] = []
+    answered_questions: list[QuestionForImplementation] = []
+    setup_duration_ns: int | None = None
+    answer_questions_duration_ns: int | None = None
+    total_duration_ns: int | None = None
+    profiler: Profiler | None = None
+    setup_started = False
+
+    if clear_cache is not None:
+        clear_cache(context)
+
+    profiler = Profiler(interval_seconds=args.profile_interval_ms / 1000)
+    profiler.start()
 
     try:
-        state = setup(dataset, scratch_dir, context)
-
-        if args.warmup == "full":
-            if warmup is not None:
-                warmup(state, questions_for_impl)
-            else:
-                for q in questions_for_impl:
-                    answer_question(q, state)
-
-        profiler = Profiler(interval_seconds=args.profile_interval_ms / 1000)
-        profiler.start()
-
         total_start_ns = perf_counter_ns()
-
-        for index, question in enumerate(questions_for_impl):
-            q_start_ns = perf_counter_ns()
-
+        try:
+            setup_start_ns = perf_counter_ns()
+            setup_started = True
             try:
-                answer = answer_question(question, state)
-                q_status = "ok"
-                q_error = None
-            except Exception as exc:
-                answer = None
-                q_status = "error"
-                q_error = {
-                    "type": type(exc).__name__,
-                    "message": str(exc),
-                    "traceback": traceback.format_exc()
-                }
-                if args.stop_on_error:
-                    raise
+                setup(context)
+            finally:
+                setup_duration_ns = perf_counter_ns() - setup_start_ns
 
-            q_end_ns = perf_counter_ns()
+            answer_questions_start_ns = perf_counter_ns()
+            try:
+                answered_questions = answer_questions(questions_for_impl)
+            finally:
+                answer_questions_duration_ns = (
+                    perf_counter_ns() - answer_questions_start_ns
+                )
+        finally:
+            total_duration_ns = perf_counter_ns() - total_start_ns
 
-            answers.append({
-                "index": index,
-                "question_id": question["id"],
-                "answer": answer,
-                "status": q_status,
-                "error": q_error
-            })
-
-            per_question_timings.append({
-                "index": index,
-                "question_id": question["id"],
-                "duration_ns": q_end_ns - q_start_ns,
-                "status": q_status
-            })
-
-        total_end_ns = perf_counter_ns()
-        total_questions_duration_ns = total_end_ns - total_start_ns
-
-        profiler.stop()
-
-    except Exception as exc:
-        status = "error"
-        error = {
-            "type": type(exc).__name__,
-            "message": str(exc),
-            "traceback": traceback.format_exc()
-        }
+        answers = normalize_answers(answered_questions)
 
     finally:
-        if state is not None and teardown is not None:
-            teardown(state)
+        profiler.stop()
 
-    profile_samples = profiler.samples if "profiler" in locals() else []
-    profile_summary = profiler.summary() if "profiler" in locals() else {}
+        if setup_started and teardown is not None:
+            teardown()
+
+    profile_samples = profiler.samples if profiler is not None else []
+    profile_summary = profiler.summary() if profiler is not None else None
 
     validation = validate_answers(
         questions_with_answers=questions_with_answers,
         submitted_answers=answers,
-        validation_config=question_spec.get("validation", {}),
     )
 
-    timings = {
-        "implementation_import_duration_ns": implementation_import_duration_ns,
-        "setup_timed": False,
-        "total_questions_duration_ns": total_questions_duration_ns,
-        "per_question": per_question_timings
-    }
+    timings = RunTimings(
+        setup_duration_ns=setup_duration_ns,
+        answer_questions_duration_ns=answer_questions_duration_ns,
+        total_duration_ns=total_duration_ns,
+    )
 
     write_result_bundle(
         out_dir=out_dir,
-        manifest=manifest,
         questions=question_spec,
         metadata=metadata,
         timings=timings,
@@ -464,246 +604,357 @@ def main(
         validation=validation,
         profile_samples=profile_samples,
         profile_summary=profile_summary,
-        status=status,
-        error=error,
+    )
+
+    if not validation.correct:
+        raise SystemExit(1)
+
+
+def normalize_answers(
+    questions: list[QuestionForImplementation],
+) -> list[SubmittedAnswer]:
+    """Convert answered implementation questions into result rows."""
+    return [
+        SubmittedAnswer(
+            index=index,
+            question_id=question.id,
+            answer=question.answer,
+        )
+        for index, question in enumerate(questions)
+    ]
+
+
+def resolve_run_args(
+    *,
+    default_questions: str | Path | None,
+    default_out: str | Path | None,
+) -> RunArgs:
+    """Resolve run arguments, rejecting ambiguous CLI/default conflicts."""
+    parsed = parse_args()
+
+    if parsed.questions is not None and default_questions is not None:
+        raise SystemExit("error: pass questions either in main() or --questions, not both")
+    if parsed.out is not None and default_out is not None:
+        raise SystemExit("error: pass out either in main() or --out, not both")
+
+    questions = parsed.questions if parsed.questions is not None else default_questions
+    out = parsed.out if parsed.out is not None else default_out
+
+    if questions is None:
+        raise SystemExit("error: --questions is required unless main(questions=...) is set")
+    if out is None:
+        raise SystemExit("error: --out is required unless main(out=...) is set")
+
+    return RunArgs(
+        command=parsed.command,
+        questions=str(questions),
+        out=Path(out),
+        profile_interval_ms=parsed.profile_interval_ms,
     )
 
 
-def parse_args():
+def parse_args() -> RunArgs:
+    """Parse command-line arguments for a run or smoke command."""
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command", required=True)
 
     run = sub.add_parser("run")
-    run.add_argument("--manifest", required=True)
-    run.add_argument("--questions", required=True)
-    run.add_argument("--out", required=True)
-    run.add_argument("--warmup", choices=["none", "full"], default="none")
-    run.add_argument(
-        "--declared-cache-state",
-        choices=["cold", "warm", "dandi_pre_cache", "other"],
-        default=None,
-    )
+    run.add_argument("--questions")
+    run.add_argument("--out")
     run.add_argument("--profile-interval-ms", type=int, default=250)
-    run.add_argument("--stop-on-error", action="store_true")
 
     smoke = sub.add_parser("smoke")
-    smoke.add_argument("--manifest", required=True)
-    smoke.add_argument("--questions", required=True)
-    smoke.add_argument("--out", default="smoke_results")
-    smoke.add_argument("--warmup", choices=["none", "full"], default="none")
-    smoke.add_argument("--declared-cache-state", default=None)
+    smoke.add_argument("--questions")
+    smoke.add_argument("--out")
     smoke.add_argument("--profile-interval-ms", type=int, default=250)
-    smoke.add_argument("--stop-on-error", action="store_true")
 
-    return parser.parse_args()
+    namespace = parser.parse_args()
+    return RunArgs(
+        command=namespace.command,
+        questions=namespace.questions,
+        out=Path(namespace.out),
+        profile_interval_ms=namespace.profile_interval_ms,
+    )
 ```
 
 ---
 
-## 6. Schema utilities skeleton
+## 7. Schema utilities skeleton
 
 ```python
-# nwb_benchmark/schemas.py
+# src/neurodatabench/schemas.py
+
+"""Schema loading and conversion utilities for benchmark inputs."""
 
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
+from importlib.resources import files
 from pathlib import Path
-from typing import Any
+
+from neurodatabench.models import (
+    JsonObject,
+    QuestionForImplementation,
+)
 
 
-def load_manifest(path: Path) -> dict[str, Any]:
-    with path.open("r") as f:
-        manifest = json.load(f)
+def load_questions(source: str | Path) -> JsonObject:
+    """Load and validate questions from a path or packaged question name."""
+    questions = require_json_object(json.loads(read_questions_text(source)))
 
-    assert "datasets" in manifest
-    assert isinstance(manifest["datasets"], list)
+    dataset_paths = questions.get("dataset_paths")
+    if not isinstance(dataset_paths, list) or not dataset_paths:
+        raise ValueError("questions.json must include non-empty dataset_paths list")
 
-    return manifest
+    if not all(isinstance(path, str) for path in dataset_paths):
+        raise ValueError("questions.json dataset_paths entries must be strings")
 
+    rows = questions.get("questions")
+    if not isinstance(rows, list):
+        raise ValueError("questions.json must include questions list")
 
-def load_questions(path: Path) -> dict[str, Any]:
-    with path.open("r") as f:
-        questions = json.load(f)
+    seen: set[str] = set()
 
-    assert "dataset_id" in questions
-    assert "questions" in questions
-    assert isinstance(questions["questions"], list)
-
-    seen = set()
-    for q in questions["questions"]:
-        assert "id" in q
-        assert "text" in q
-        assert "answer" in q
-        assert "order" not in q
-        assert "depends_on" not in q
-        assert "input_files" not in q
-        assert q["id"] not in seen
-        seen.add(q["id"])
+    for raw_question in rows:
+        question = require_json_object(raw_question)
+        question_id = question.get("id")
+        if not isinstance(question_id, str):
+            raise ValueError("Each question must include string id")
+        if question_id in seen:
+            raise ValueError(f"Duplicate question id: {question_id}")
+        seen.add(question_id)
 
     return questions
 
 
-def select_dataset(manifest: dict[str, Any], dataset_id: str) -> dict[str, Any]:
-    matches = [
-        dataset for dataset in manifest["datasets"]
-        if dataset["dataset_id"] == dataset_id
-    ]
+def read_questions_text(source: str | Path) -> str:
+    """Read questions text from a filesystem path or package resource."""
+    path = Path(source)
 
-    if len(matches) != 1:
-        raise ValueError(f"Expected one dataset for {dataset_id}, found {len(matches)}")
+    if path.exists():
+        return path.read_text()
 
-    return matches[0]
+    question_name = path.stem if path.suffix == ".json" else str(source)
+    resource = files("neurodatabench").joinpath(
+        "questions",
+        f"{question_name}.json",
+    )
+
+    if not resource.is_file():
+        raise FileNotFoundError(f"Questions not found: {source}")
+
+    return resource.read_text()
 
 
-def strip_answers(questions: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    stripped = []
+def question_rows(question_spec: JsonObject) -> list[JsonObject]:
+    """Return the ordered question objects from a loaded questions file."""
+    rows = question_spec.get("questions")
+    if not isinstance(rows, list):
+        raise ValueError("questions.json must include questions list")
+    return [require_json_object(row) for row in rows]
 
-    for q in questions:
-        q2 = dict(q)
-        q2.pop("answer", None)
-        stripped.append(q2)
 
-    return stripped
+def dataset_paths_from_questions(question_spec: JsonObject) -> list[str]:
+    """Return the dataset paths declared by a loaded questions file."""
+    dataset_paths = question_spec.get("dataset_paths")
+    if not isinstance(dataset_paths, list) or not dataset_paths:
+        raise ValueError("questions.json must include non-empty dataset_paths list")
+
+    if not all(isinstance(path, str) for path in dataset_paths):
+        raise ValueError("questions.json dataset_paths entries must be strings")
+
+    return dataset_paths
+
+
+def prepare_questions_for_implementation(
+    questions: Sequence[JsonObject],
+) -> list[QuestionForImplementation]:
+    """Return implementation-facing questions with blank answer fields."""
+    prepared: list[QuestionForImplementation] = []
+
+    for raw_question in questions:
+        question = require_json_object(raw_question)
+        question_id = question.get("id")
+        question_text = question.get("text")
+        if not isinstance(question_id, str) or not isinstance(question_text, str):
+            raise ValueError("Each question must include string id and text")
+        prepared.append(QuestionForImplementation(id=question_id, text=question_text))
+
+    return prepared
+
+
+def require_json_object(value: object) -> JsonObject:
+    """Return value as a JSON object or raise a clear validation error."""
+    if not isinstance(value, dict):
+        raise ValueError("Expected JSON object")
+    return value
 ```
 
 ---
 
-## 7. Validation skeleton
+## 8. Validation skeleton
 
 ```python
-# nwb_benchmark/validation.py
+# src/neurodatabench/validation.py
+
+"""Answer validation utilities for completed benchmark runs."""
 
 from __future__ import annotations
 
-import math
-from typing import Any
+from dataclasses import dataclass
+
+import numpy as np
+
+from neurodatabench.models import (
+    JsonObject,
+    JsonValue,
+    SubmittedAnswer,
+    ValidationResult,
+    ValidationSummary,
+)
+
+
+@dataclass(frozen=True)
+class ComparisonResult:
+    """Recursive JSON comparison result."""
+
+    correct: bool
+    reason: str
 
 
 def validate_answers(
-    questions_with_answers: list[dict[str, Any]],
-    submitted_answers: list[dict[str, Any]],
-    validation_config: dict[str, Any],
-) -> dict[str, Any]:
-    abs_tol = validation_config.get("float_abs_tol", 1e-9)
-    rel_tol = validation_config.get("float_rel_tol", 1e-9)
-
-    results = []
+    questions_with_answers: list[JsonObject],
+    submitted_answers: list[SubmittedAnswer],
+) -> ValidationSummary:
+    """Validate submitted answers after timed execution finishes."""
+    results: list[ValidationResult] = []
     all_correct = True
 
     if len(questions_with_answers) != len(submitted_answers):
         all_correct = False
 
     for index, question in enumerate(questions_with_answers):
-        expected_id = question["id"]
-        expected_answer = question["answer"]
+        expected_id = question.get("id")
+        expected_answer = question.get("answer")
+
+        if not isinstance(expected_id, str):
+            raise ValueError("Each question must include string id")
 
         if index >= len(submitted_answers):
-            results.append({
-                "index": index,
-                "question_id": expected_id,
-                "correct": False,
-                "reason": "missing_answer"
-            })
+            results.append(ValidationResult(
+                index=index,
+                question_id=expected_id,
+                correct=False,
+                reason="missing_answer",
+            ))
             all_correct = False
             continue
 
         submitted = submitted_answers[index]
-        actual_id = submitted.get("question_id")
-        actual_answer = submitted.get("answer")
+        actual_id = submitted.question_id
+        actual_answer = submitted.answer
 
         if actual_id != expected_id:
-            results.append({
-                "index": index,
-                "question_id": expected_id,
-                "correct": False,
-                "reason": "question_id_mismatch",
-                "actual_question_id": actual_id
-            })
+            results.append(ValidationResult(
+                index=index,
+                question_id=expected_id,
+                correct=False,
+                reason="question_id_mismatch",
+                actual_question_id=actual_id,
+            ))
             all_correct = False
             continue
 
-        correct, reason = compare_json_value(
+        comparison = compare_json_value(
             expected_answer,
             actual_answer,
-            abs_tol=abs_tol,
-            rel_tol=rel_tol,
         )
 
-        results.append({
-            "index": index,
-            "question_id": expected_id,
-            "correct": correct,
-            "reason": reason
-        })
+        results.append(ValidationResult(
+            index=index,
+            question_id=expected_id,
+            correct=comparison.correct,
+            reason=comparison.reason,
+        ))
 
-        if not correct:
+        if not comparison.correct:
             all_correct = False
 
-    return {
-        "correct": all_correct,
-        "num_questions": len(questions_with_answers),
-        "num_submitted": len(submitted_answers),
-        "num_correct": sum(1 for r in results if r["correct"]),
-        "results": results
-    }
+    return ValidationSummary(
+        correct=all_correct,
+        num_questions=len(questions_with_answers),
+        num_submitted=len(submitted_answers),
+        num_correct=sum(1 for result in results if result.correct),
+        results=results,
+    )
 
 
-def compare_json_value(expected: Any, actual: Any, abs_tol: float, rel_tol: float):
+def compare_json_value(expected: JsonValue, actual: JsonValue) -> ComparisonResult:
+    """Compare expected and actual JSON values recursively."""
     if isinstance(expected, bool):
-        return actual is expected, "exact_bool"
+        return ComparisonResult(actual is expected, "exact_bool")
 
     if isinstance(expected, int) and not isinstance(expected, bool):
-        return actual == expected and isinstance(actual, int), "exact_int"
+        return ComparisonResult(
+            actual == expected and isinstance(actual, int),
+            "exact_int",
+        )
 
     if isinstance(expected, float):
         if not isinstance(actual, (int, float)) or isinstance(actual, bool):
-            return False, "expected_float"
-        return math.isclose(float(actual), expected, abs_tol=abs_tol, rel_tol=rel_tol), "float_close"
+            return ComparisonResult(False, "expected_float")
+        return ComparisonResult(
+            bool(np.isclose(float(actual), expected)),
+            "float_close",
+        )
 
     if isinstance(expected, str):
-        return actual == expected, "exact_str"
+        return ComparisonResult(actual == expected, "exact_str")
 
     if expected is None:
-        return actual is None, "exact_null"
+        return ComparisonResult(actual is None, "exact_null")
 
     if isinstance(expected, list):
         if not isinstance(actual, list):
-            return False, "expected_list"
+            return ComparisonResult(False, "expected_list")
         if len(expected) != len(actual):
-            return False, "list_length_mismatch"
+            return ComparisonResult(False, "list_length_mismatch")
         for e, a in zip(expected, actual):
-            ok, reason = compare_json_value(e, a, abs_tol, rel_tol)
-            if not ok:
-                return False, f"list_item_{reason}"
-        return True, "list_match"
+            comparison = compare_json_value(e, a)
+            if not comparison.correct:
+                return ComparisonResult(False, f"list_item_{comparison.reason}")
+        return ComparisonResult(True, "list_match")
 
     if isinstance(expected, dict):
         if not isinstance(actual, dict):
-            return False, "expected_object"
+            return ComparisonResult(False, "expected_object")
         if set(expected.keys()) != set(actual.keys()):
-            return False, "object_keys_mismatch"
+            return ComparisonResult(False, "object_keys_mismatch")
         for key in expected:
-            ok, reason = compare_json_value(expected[key], actual[key], abs_tol, rel_tol)
-            if not ok:
-                return False, f"object_value_{key}_{reason}"
-        return True, "object_match"
+            comparison = compare_json_value(expected[key], actual[key])
+            if not comparison.correct:
+                return ComparisonResult(
+                    False,
+                    f"object_value_{key}_{comparison.reason}",
+                )
+        return ComparisonResult(True, "object_match")
 
-    return False, "unsupported_expected_type"
+    return ComparisonResult(False, "unsupported_expected_type")
 ```
 
 ---
 
-## 8. Inline metadata and environment capture
+## 9. Inline metadata and environment capture
 
 ```python
-# nwb_benchmark/metadata.py
+# src/neurodatabench/metadata.py
+
+"""Run metadata and inline script metadata capture."""
 
 from __future__ import annotations
 
-import hashlib
 import importlib.metadata
-import json
 import os
 import platform
 import socket
@@ -711,38 +962,35 @@ import sys
 import tomllib
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+
+from neurodatabench.models import JsonObject, RunContext
 
 
 def collect_run_metadata(
-    implementation: dict[str, Any],
-    declared_cache_state: str,
-    manifest_path: Path,
-    questions_path: Path,
-    submission_path: Path,
-    implementation_import_duration_ns: int,
-    warmup: str,
-) -> dict[str, Any]:
-    inline_metadata = parse_uv_inline_metadata(submission_path)
+    context: RunContext,
+    implementation_name: str,
+    implementation_cache_type: str,
+    implementation_notes: str,
+) -> JsonObject:
+    """Collect run metadata without shelling out to pip."""
+    inline_metadata = parse_uv_inline_metadata(context.submission_path)
     key_packages = package_versions_from_inline_metadata(inline_metadata)
 
     return {
         "datetime_utc": datetime.now(timezone.utc).isoformat(),
         "hostname": socket.gethostname(),
         "benchmark_harness_version": get_harness_version(),
-        "implementation": implementation,
-        "declared_cache_state": declared_cache_state,
-        "warmup": warmup,
-        "implementation_import_duration_ns": implementation_import_duration_ns,
-        "paths": {
-            "manifest": str(manifest_path),
-            "questions": str(questions_path),
-            "submission": str(submission_path),
+        "implementation": {
+            "name": implementation_name,
+            "cache_type": implementation_cache_type,
+            "notes": implementation_notes,
         },
-        "sha256": {
-            "manifest": sha256_file(manifest_path),
-            "questions": sha256_file(questions_path),
-            "submission": sha256_file(submission_path),
+        "paths": {
+            "questions": context.questions_source,
+            "submission": str(context.submission_path),
+        },
+        "dataset": {
+            "paths": context.dataset_paths,
         },
         "python": {
             "version": sys.version,
@@ -766,7 +1014,8 @@ def collect_run_metadata(
     }
 
 
-def parse_uv_inline_metadata(script_path: Path) -> dict[str, Any]:
+def parse_uv_inline_metadata(script_path: Path) -> JsonObject:
+    """Parse PEP 723 inline metadata from a submission script."""
     lines = script_path.read_text().splitlines()
 
     in_block = False
@@ -791,14 +1040,21 @@ def parse_uv_inline_metadata(script_path: Path) -> dict[str, Any]:
     if not block_lines:
         return {}
 
-    return tomllib.loads("\n".join(block_lines))
+    parsed = tomllib.loads("\n".join(block_lines))
+    return parsed
 
 
-def package_versions_from_inline_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
-    deps = metadata.get("dependencies", [])
-    versions = {}
+def package_versions_from_inline_metadata(
+    metadata: JsonObject,
+) -> dict[str, str | None]:
+    """Return installed versions for declared inline dependencies."""
+    raw_deps = metadata.get("dependencies", [])
+    deps = raw_deps if isinstance(raw_deps, list) else []
+    versions: dict[str, str | None] = {}
 
     for dep in deps:
+        if not isinstance(dep, str):
+            continue
         name = normalize_requirement_name(dep)
         try:
             versions[name] = importlib.metadata.version(name)
@@ -809,6 +1065,7 @@ def package_versions_from_inline_metadata(metadata: dict[str, Any]) -> dict[str,
 
 
 def normalize_requirement_name(requirement: str) -> str:
+    """Return a normalized package name from a dependency declaration."""
     # Keep minimal. Replace with packaging.requirements.Requirement if available.
     raw = requirement.split(";")[0].strip()
     raw = raw.split("[")[0]
@@ -818,17 +1075,10 @@ def normalize_requirement_name(requirement: str) -> str:
     return raw.strip().lower().replace("_", "-")
 
 
-def sha256_file(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
 def get_harness_version() -> str:
+    """Return the installed NeuroDataBench package version if available."""
     try:
-        return importlib.metadata.version("nwb-benchmark")
+        return importlib.metadata.version("neurodatabench")
     except importlib.metadata.PackageNotFoundError:
         return "unknown"
 ```
@@ -843,34 +1093,48 @@ Only record declared inline dependencies plus resolved installed versions.
 
 ---
 
-## 9. Profiler skeleton
+## 10. Profiler skeleton
 
 ```python
-# nwb_benchmark/profiling.py
+# src/neurodatabench/profiling.py
+
+"""Process and system resource profiling for benchmark runs."""
 
 from __future__ import annotations
 
 import os
 import threading
 import time
-from typing import Any
+from typing import Protocol
 
 import psutil
 
+from neurodatabench.models import JsonObject
+
+
+class CounterSnapshot(Protocol):
+    """Protocol for psutil namedtuple counters."""
+
+    _fields: tuple[str, ...]
+
 
 class Profiler:
-    def __init__(self, interval_seconds: float = 0.25):
-        self.interval_seconds = interval_seconds
-        self.samples: list[dict[str, Any]] = []
-        self._stop = threading.Event()
-        self._thread = None
-        self._process = psutil.Process(os.getpid())
-        self._net_start = None
-        self._disk_start = None
-        self._net_end = None
-        self._disk_end = None
+    """Background sampler for process and system resource usage."""
 
-    def start(self):
+    def __init__(self, interval_seconds: float = 0.25) -> None:
+        """Create a profiler with the requested sampling interval."""
+        self.interval_seconds = interval_seconds
+        self.samples: list[JsonObject] = []
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._process = psutil.Process(os.getpid())
+        self._net_start: CounterSnapshot | None = None
+        self._disk_start: CounterSnapshot | None = None
+        self._net_end: CounterSnapshot | None = None
+        self._disk_end: CounterSnapshot | None = None
+
+    def start(self) -> None:
+        """Start collecting profiler samples."""
         self._net_start = psutil.net_io_counters()
         self._disk_start = psutil.disk_io_counters()
 
@@ -880,7 +1144,8 @@ class Profiler:
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
-    def stop(self):
+    def stop(self) -> None:
+        """Stop collecting profiler samples."""
         self._stop.set()
 
         if self._thread is not None:
@@ -889,12 +1154,14 @@ class Profiler:
         self._net_end = psutil.net_io_counters()
         self._disk_end = psutil.disk_io_counters()
 
-    def _run(self):
+    def _run(self) -> None:
+        """Collect samples until stopped."""
         while not self._stop.is_set():
             self.samples.append(self._sample())
             time.sleep(self.interval_seconds)
 
-    def _sample(self) -> dict[str, Any]:
+    def _sample(self) -> JsonObject:
+        """Collect one profiler sample as a JSON object."""
         mem = self._process.memory_info()
 
         child_rss = 0
@@ -931,19 +1198,27 @@ class Profiler:
             "io": {
                 "net": psutil.net_io_counters()._asdict(),
                 "disk": psutil.disk_io_counters()._asdict(),
-            }
+            },
         }
 
-    def summary(self) -> dict[str, Any]:
+    def summary(self) -> JsonObject:
+        """Summarize collected profiler samples."""
         peak_rss = max(
-            [s["process"]["rss_bytes"] for s in self.samples],
+            [
+                int(sample["process"]["rss_bytes"])
+                for sample in self.samples
+                if isinstance(sample.get("process"), dict)
+            ],
             default=None,
         )
 
         peak_total_rss = max(
             [
-                s["process"]["rss_bytes"] + s["children"]["rss_bytes"]
-                for s in self.samples
+                int(sample["process"]["rss_bytes"])
+                + int(sample["children"]["rss_bytes"])
+                for sample in self.samples
+                if isinstance(sample.get("process"), dict)
+                and isinstance(sample.get("children"), dict)
             ],
             default=None,
         )
@@ -956,15 +1231,19 @@ class Profiler:
             "network_delta": diff_counters(self._net_start, self._net_end),
             "disk_delta": diff_counters(self._disk_start, self._disk_end),
             "network_scope": "system_delta",
-            "disk_scope": "system_delta"
+            "disk_scope": "system_delta",
         }
 
 
-def diff_counters(start, end):
+def diff_counters(
+    start: CounterSnapshot | None,
+    end: CounterSnapshot | None,
+) -> dict[str, int] | None:
+    """Return counter deltas for psutil namedtuple counters."""
     if start is None or end is None:
         return None
 
-    out = {}
+    out: dict[str, int] = {}
     for key in start._fields:
         out[key] = getattr(end, key) - getattr(start, key)
 
@@ -973,39 +1252,50 @@ def diff_counters(start, end):
 
 ---
 
-## 10. Result bundle writer
+## 11. Result bundle writer
 
 ```python
-# nwb_benchmark/packaging.py
+# src/neurodatabench/packaging.py
+
+"""Result artifact writer for NeuroDataBench benchmark bundles."""
 
 from __future__ import annotations
 
 import json
 import zipfile
+from collections.abc import Sequence
+from dataclasses import asdict, is_dataclass
 from pathlib import Path
-from typing import Any
+from typing import TypeAlias
+
+from neurodatabench.models import (
+    JsonObject,
+    JsonValue,
+    RunTimings,
+    SubmittedAnswer,
+    ValidationSummary,
+)
+
+JsonWritable: TypeAlias = JsonValue | JsonObject | RunTimings | ValidationSummary
+JsonLineRow: TypeAlias = SubmittedAnswer | JsonObject
 
 
 def write_result_bundle(
     out_dir: Path,
-    manifest: dict[str, Any],
-    questions: dict[str, Any],
-    metadata: dict[str, Any],
-    timings: dict[str, Any],
-    answers: list[dict[str, Any]],
-    validation: dict[str, Any],
-    profile_samples: list[dict[str, Any]],
-    profile_summary: dict[str, Any],
-    status: str,
-    error: dict[str, Any] | None,
+    questions: JsonObject,
+    metadata: JsonObject,
+    timings: RunTimings,
+    answers: list[SubmittedAnswer],
+    validation: ValidationSummary,
+    profile_samples: list[JsonObject],
+    profile_summary: JsonObject | None,
 ) -> None:
-    write_json(out_dir / "manifest.json", manifest)
+    """Write all result files and package them into a zip bundle."""
     write_json(out_dir / "questions.json", questions)
     write_json(out_dir / "run_metadata.json", metadata)
     write_json(out_dir / "timings.json", timings)
     write_json(out_dir / "validation.json", validation)
     write_json(out_dir / "profile_summary.json", profile_summary)
-    write_json(out_dir / "status.json", {"status": status, "error": error})
 
     write_jsonl(out_dir / "answers.jsonl", answers)
     write_jsonl(out_dir / "profile_samples.jsonl", profile_samples)
@@ -1020,14 +1310,23 @@ def write_result_bundle(
                 z.write(path, arcname=path.name)
 
 
-def write_json(path: Path, value: Any) -> None:
+def write_json(path: Path, value: JsonWritable) -> None:
+    """Write a dataclass or JSON value as pretty JSON."""
+    if is_dataclass(value):
+        path.write_text(json.dumps(asdict(value), indent=2, sort_keys=True))
+        return
+
     path.write_text(json.dumps(value, indent=2, sort_keys=True))
 
 
-def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
+def write_jsonl(path: Path, rows: Sequence[JsonLineRow]) -> None:
+    """Write typed model/dataclass rows as newline-delimited JSON."""
     with path.open("w") as f:
         for row in rows:
-            f.write(json.dumps(row, sort_keys=True) + "\n")
+            if is_dataclass(row):
+                f.write(json.dumps(asdict(row), sort_keys=True) + "\n")
+            else:
+                f.write(json.dumps(row, sort_keys=True) + "\n")
 ```
 
 ---
@@ -1036,7 +1335,6 @@ def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
 
 ```text
 results/
-  manifest.json
   questions.json
   run_metadata.json
   timings.json
@@ -1044,7 +1342,6 @@ results/
   validation.json
   profile_samples.jsonl
   profile_summary.json
-  status.json
   results_bundle.zip
 ```
 
@@ -1054,17 +1351,10 @@ results/
 
 ```json
 {
-  "implementation_import_duration_ns": 123456789,
-  "setup_timed": false,
-  "total_questions_duration_ns": 987654321,
-  "per_question": [
-    {
-      "index": 0,
-      "question_id": "q001_units_VISp_default_qc",
-      "duration_ns": 123456,
-      "status": "ok"
-    }
-  ]
+  "setup_timed": true,
+  "setup_duration_ns": 123456789,
+  "answer_questions_duration_ns": 987654321,
+  "total_duration_ns": 1111111110
 }
 ```
 
@@ -1073,7 +1363,7 @@ results/
 # `answers.jsonl` shape
 
 ```json
-{"index":0,"question_id":"q001_units_VISp_default_qc","answer":123,"status":"ok","error":null}
+{"index":0,"question_id":"q001_units_VISp_default_qc","answer":123}
 ```
 
 ---
@@ -1085,11 +1375,9 @@ datetime_utc
 hostname
 benchmark_harness_version
 implementation
-declared_cache_state
-warmup
-implementation_import_duration_ns
+implementation.cache_type
+dataset
 paths
-sha256
 python
 platform
 process
@@ -1103,35 +1391,57 @@ key_package_versions
 
 ## Schema
 
-* [ ] `questions.json` has top-level `dataset_id`.
+* [ ] `questions.json` does not require `schema_version`.
+* [ ] `questions.json` has top-level `dataset_paths`.
+* [ ] `dataset_paths` is a non-empty list of local paths or remote URIs.
+* [ ] `questions.json` has no dataset ID indirection.
+* [ ] There is no separate dataset manifest.
 * [ ] Each question has `id`, `text`, `answer`.
 * [ ] No question has `order`.
 * [ ] No question has `depends_on`.
 * [ ] No question has `input_files`.
 * [ ] Question list order is execution order.
-* [ ] Manifest dataset ID matches questions dataset ID.
-* [ ] All dataset files are passed to `setup()`.
+* [ ] Dataset paths are available through `RunContext`.
+* [ ] Packaged question filenames are benchmark names.
 
 ## Timing
 
-* [ ] Implementation import duration captured.
 * [ ] Harness import happens only inside `if __name__ == "__main__":`.
-* [ ] Setup duration is not captured.
-* [ ] Warmup duration is not captured.
+* [ ] Implementation import duration is not explicitly timed or recorded.
+* [ ] `clear_cache()` is optional, untimed, and called only before the first measured run.
+* [ ] Setup duration is captured separately.
+* [ ] `answer_questions()` duration is captured separately.
+* [ ] `total_duration_ns` includes setup and `answer_questions()` duration.
 * [ ] Teardown duration is not captured.
-* [ ] Per-question duration captured.
-* [ ] Total ordered-question-loop duration captured directly.
-* [ ] Validation starts only after total question-loop timer stops.
-* [ ] Answers are written after timed loop.
+* [ ] Per-question duration is not captured by the harness.
+* [ ] Validation starts only after setup, answer, and total timers stop.
+* [ ] Answers are written after the timed answer pass.
 
 ## Implementation interface
 
-* [ ] User script defines `IMPLEMENTATION`.
+* [ ] User script does not define top-level `IMPLEMENTATION` metadata.
+* [ ] User script passes implementation metadata to `main()` inside `if __name__ == "__main__":`.
+* [ ] User script may pass default `questions=...` and `out=...` values to `main()`.
+* [ ] CLI `--questions` and `--out` raise a clear error when the matching default is also passed to `main()`.
 * [ ] User script defines `setup()`.
-* [ ] User script defines `answer_question()`.
-* [ ] User script optionally defines `warmup()`.
+* [ ] User script defines `answer_questions()`.
 * [ ] User script optionally defines `teardown()`.
-* [ ] `answer_question()` receives stripped question objects without `answer`.
+* [ ] User script declares implementation cache type in `main()`.
+* [ ] User script keeps submission-owned state in module-level variables.
+* [ ] `setup()` resets module-level state for each measured run.
+* [ ] The runner does not inspect or pass submission state between hooks.
+* [ ] `answer_questions()` receives the full ordered question list without expected answers.
+* [ ] `answer_questions()` fills each question's `answer` field and returns the completed list.
+* [ ] There is no separate implementation `warmup()` hook.
+
+## Typing
+
+* [ ] Public harness functions have complete parameter and return type hints.
+* [ ] Submission template functions have complete parameter and return type hints.
+* [ ] Public hook/result records use dataclasses where attributes improve clarity.
+* [ ] Question specs, run metadata, inline script metadata, and profiler records remain plain JSON objects.
+* [ ] No run status enum, status string, status file, or captured error artifact.
+* [ ] Pydantic models are not constructed in the user script top level or timed setup/answer path.
 
 ## Metadata
 
@@ -1139,11 +1449,12 @@ key_package_versions
 * [ ] Parse uv inline script metadata.
 * [ ] Record declared dependencies.
 * [ ] Record installed versions for declared dependencies.
+* [ ] Record implementation cache type.
+* [ ] Record dataset paths.
 * [ ] Record Python executable/version.
 * [ ] Record platform info.
 * [ ] Record datetime UTC.
-* [ ] Record file hashes.
-* [ ] Record declared cache state.
+* [ ] Do not hash dataset files or input files.
 
 ## Profiling
 
@@ -1162,15 +1473,17 @@ key_package_versions
 * [ ] Validate question ID match.
 * [ ] Infer expected type from `answer`.
 * [ ] Exact compare ints, strings, bools, null.
-* [ ] Float compare with top-level tolerance.
+* [ ] No validation config or validation DSL in `questions.json`.
+* [ ] Float compare with `numpy.isclose` defaults.
 * [ ] Recursive compare lists/objects.
 * [ ] Write `validation.json`.
+* [ ] Any incorrect answer makes `validation.correct` false.
+* [ ] CLI exits nonzero after writing result artifacts when `validation.correct` is false.
 
 ## Packaging
 
 * [ ] Write all result files.
 * [ ] Create `results_bundle.zip`.
-* [ ] Include manifest.
 * [ ] Include questions with answers.
 * [ ] Include metadata.
 * [ ] Include timings.
@@ -1178,3 +1491,9 @@ key_package_versions
 * [ ] Include validation.
 * [ ] Include profile samples.
 * [ ] Include profile summary.
+* [ ] Distribute `src/neurodatabench/questions/*.json` in wheels and sdists.
+* [ ] Runner resolves `--questions` as either a filesystem path or packaged question name.
+* [ ] Runner resolves `main(questions=...)` the same way when CLI `--questions` is omitted.
+* [ ] Runner rejects runs where both CLI `--questions` and `main(questions=...)` are supplied.
+* [ ] Runner rejects runs where both CLI `--out` and `main(out=...)` are supplied.
+* [ ] Smoke tests can run locally with packaged question names.
