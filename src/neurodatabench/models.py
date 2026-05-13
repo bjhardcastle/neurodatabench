@@ -11,6 +11,7 @@ import pydantic
 JsonPrimitive: TypeAlias = str | int | float | bool | None
 JsonValue: TypeAlias = pydantic.JsonValue
 JsonObject: TypeAlias = dict[str, JsonValue]
+LocalCacheState: TypeAlias = Literal["cold", "warm"]
 
 
 @dataclasses.dataclass(slots=True, frozen=True)
@@ -43,10 +44,15 @@ class Implementation:
     """The NWB API or interface used to answer benchmark questions, if any"""
     object_store_backend: str | None
     """The object-store access backend used by the implementation, if any"""
-    local_cache: Literal["cold", "warm", False] | None
+    local_cache: LocalCacheState | None
     """The state of the implementation's local cache, if any"""
     remote_cache: bool | None
     """Whether the implementation depends on a pre-computed cache object ranges (e.g. kerchunk/lindi)"""
+
+    def __post_init__(self) -> None:
+        """Reject local cache metadata outside the public cold/warm/none states."""
+        if self.local_cache not in ("cold", "warm", None):
+            raise ValueError("local_cache must be 'cold', 'warm', or None")
 
 
 @dataclasses.dataclass(slots=True)

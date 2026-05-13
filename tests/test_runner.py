@@ -57,7 +57,7 @@ class RunnerTests(unittest.TestCase):
                     implementation_id="test-implementation",
                     implementation_nwb_interface="pynwb",
                     implementation_object_store_backend="s3fs",
-                    implementation_local_cache=False,
+                    implementation_local_cache=None,
                     implementation_remote_cache=False,
                     benchmark="dynamic_routing_zarr_v0",
                     out=tmpdir,
@@ -149,6 +149,20 @@ class RunnerTests(unittest.TestCase):
             self.assertNotIn("memory_profile.html", bundle_names)
             self.assertNotIn("cpu_profile.html", bundle_names)
 
+    def test_local_cache_false_is_rejected(self) -> None:
+        """False is not a valid local cache metadata state."""
+        with self.assertRaisesRegex(
+            ValueError,
+            "local_cache must be 'cold', 'warm', or None",
+        ):
+            neurodatabench.models.Implementation(
+                id="test-implementation",
+                nwb_interface=None,
+                object_store_backend=None,
+                local_cache=False,
+                remote_cache=False,
+            )
+
     def test_clear_cache_runs_before_profiled_setup(self) -> None:
         """The optional cache hook should run before measured phases."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -231,7 +245,7 @@ class RunnerTests(unittest.TestCase):
 
             neurodatabench.runner.main(
                 implementation_id="test-implementation",
-                implementation_local_cache=False,
+                implementation_local_cache=None,
                 implementation_remote_cache=False,
                 benchmark=benchmark_path,
                 out=Path(tmpdir) / "results",
@@ -264,7 +278,7 @@ class RunnerTests(unittest.TestCase):
                 os.chdir(tmpdir)
                 neurodatabench.runner.main(
                     implementation_id="default-out-test",
-                    implementation_local_cache=False,
+                    implementation_local_cache=None,
                     implementation_remote_cache=False,
                     benchmark=benchmark_path,
                     setup=setup,
@@ -314,7 +328,7 @@ class RunnerTests(unittest.TestCase):
                 implementation_id="fast",
                 implementation_nwb_interface="lazynwb",
                 implementation_object_store_backend="s3fs",
-                implementation_local_cache=False,
+                implementation_local_cache=None,
                 implementation_remote_cache=False,
                 benchmark=benchmark_path,
                 out=results_dir / "fast-run",
@@ -326,7 +340,7 @@ class RunnerTests(unittest.TestCase):
                 implementation_id="slow",
                 implementation_nwb_interface="pynwb",
                 implementation_object_store_backend="remfile",
-                implementation_local_cache=False,
+                implementation_local_cache=None,
                 implementation_remote_cache=False,
                 benchmark=benchmark_path,
                 out=results_dir / "slow-run",
@@ -384,7 +398,7 @@ class RunnerTests(unittest.TestCase):
 
             neurodatabench.runner.main(
                 implementation_id="test-implementation",
-                implementation_local_cache=False,
+                implementation_local_cache=None,
                 implementation_remote_cache=False,
                 benchmark=default_path,
                 out=Path(tmpdir) / "default-results",
@@ -425,7 +439,7 @@ class RunnerTests(unittest.TestCase):
             ):
                 neurodatabench.runner.main(
                     implementation_id="test-implementation",
-                    implementation_local_cache=False,
+                    implementation_local_cache=None,
                     implementation_remote_cache=False,
                     setup=setup,
                     submit_answers=submit_answers,
@@ -535,7 +549,7 @@ class RunnerTests(unittest.TestCase):
             with self.assertLogs("neurodatabench.runner", level="WARNING") as logs:
                 neurodatabench.runner.main(
                     implementation_id="test-implementation",
-                    implementation_local_cache=False,
+                    implementation_local_cache=None,
                     implementation_remote_cache=False,
                     benchmark=benchmark_path,
                     out=Path(tmpdir) / "results-logged",
@@ -579,7 +593,7 @@ class RunnerTests(unittest.TestCase):
             with self.assertRaises(SystemExit) as error:
                 neurodatabench.runner.main(
                     implementation_id="test-implementation",
-                    implementation_local_cache=False,
+                    implementation_local_cache=None,
                     implementation_remote_cache=False,
                     benchmark=benchmark_path,
                     out=out_dir,
@@ -718,7 +732,7 @@ class RunnerTests(unittest.TestCase):
                 ):
                     neurodatabench.runner.main(
                         implementation_id="test-implementation",
-                        implementation_local_cache=False,
+                        implementation_local_cache=None,
                         implementation_remote_cache=False,
                         benchmark=benchmark_path,
                         out=out_dir,
@@ -752,7 +766,7 @@ class RunnerTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "boom"):
                 neurodatabench.runner.main(
                     implementation_id="test-implementation",
-                    implementation_local_cache=False,
+                    implementation_local_cache=None,
                     implementation_remote_cache=False,
                     benchmark=benchmark_path,
                     out=out_dir,
@@ -791,7 +805,7 @@ class RunnerTests(unittest.TestCase):
 
             neurodatabench.runner.main(
                 implementation_id="test-implementation",
-                implementation_local_cache=False,
+                implementation_local_cache=None,
                 implementation_remote_cache=False,
                 benchmark=benchmark_path,
                 out=Path(tmpdir) / "results",

@@ -20,7 +20,7 @@ from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter_ns
-from typing import Any, Literal
+from typing import Any
 
 import pydantic
 import pydantic_settings
@@ -207,7 +207,7 @@ def main(
     implementation_id: str,
     implementation_nwb_interface: str | None = None,
     implementation_object_store_backend: str | None = None,
-    implementation_local_cache: Literal["cold", "warm", False] | None = None,
+    implementation_local_cache: neurodatabench.models.LocalCacheState | None = None,
     implementation_remote_cache: bool | None = False,
     benchmark: str | Path | None = None,
     out: str | Path | None = None,

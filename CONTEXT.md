@@ -67,7 +67,7 @@
 * `main(questions=..., out=...)` can provide script-level defaults.
 * CLI `--questions` and `--out` are mutually exclusive with matching `main()` defaults; raise a clear error if both are set, because silent overrides make benchmark provenance ambiguous.
 * Dataset paths are available through `RunContext`.
-* Cache type is declared as free-form implementation metadata; `clear_cache()` is only an optional hook for clearing implementation-managed local caches.
+* Local cache metadata is declared as `"cold"`, `"warm"`, or `None`; use `None` rather than `False` when an implementation has no local cache. `clear_cache()` is only an optional hook for clearing implementation-managed local caches.
 * `clear_cache()` is untimed and called only before the first measured run; it is not called between repeated runs.
 * No `pip freeze`.
 * Environment package snapshots are written as requirements-style `requirements.txt` artifacts when captured.
