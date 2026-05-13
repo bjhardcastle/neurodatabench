@@ -2,13 +2,14 @@
 # requires-python = ">=3.10"
 # dependencies = [
 #   "altair",
-#   "lazynwb<1.0",
+#   "lazynwb==0.2.90",
 #   "numpy",
+#   "polars==1.38.1",
 #   "psutil",
 # ]
 # ///
 
-"""Runnable lazynwb 0.x implementation for the packaged NWB benchmark."""
+"""Runnable lazynwb pre-1.0 implementation for the packaged NWB benchmark."""
 
 from __future__ import annotations
 
@@ -31,18 +32,11 @@ import neurodatabench
 
 logger = logging.getLogger(__name__)
 
+state = {}
 
-def setup(context: neurodatabench.RunContext) -> None:
-    """Configure lazynwb before answering benchmark questions."""
-    logger.debug("Preparing lazynwb for %d NWB paths.", len(context.benchmark.nwb_paths))
-    cache_dir = Path(tempfile.mkdtemp(prefix="neurodatabench-lazynwb-"))
-    os.environ["LAZYNWB_CATALOG_CACHE_PATH"] = (cache_dir / "catalog.sqlite").as_posix()
-    os.environ.setdefault("AWS_REGION", "us-west-2")
-
-    lazynwb.config.use_remfile = False
-    lazynwb.config.use_obstore = False
-    lazynwb.config.fsspec_storage_options = {"anon": True}
-    lazynwb.config.anon = True
+_DEFAULT_BACKEND = "s3fs"
+_DEFAULT_BENCHMARK = "dynamic_routing_hdf5_v0"
+_DEFAULT_IMPLEMENTATION_ID = "lazynwb_v0"
 
 
 def clear_cache(context: neurodatabench.RunContext) -> None:
@@ -51,10 +45,29 @@ def clear_cache(context: neurodatabench.RunContext) -> None:
         "Clearing lazynwb caches for %d NWB paths before measured phases.",
         len(context.benchmark.nwb_paths),
     )
-    cache_dir = Path(tempfile.mkdtemp(prefix="neurodatabench-lazynwb-"))
-    os.environ["LAZYNWB_CATALOG_CACHE_PATH"] = (cache_dir / "catalog.sqlite").as_posix()
-    lazynwb.clear_cache()
-    lazynwb.clear_attrs_cache()
+    _set_catalog_cache_path()
+
+
+def setup(context: neurodatabench.RunContext) -> None:
+    """Configure lazynwb before answering benchmark questions."""
+    logger.debug("Preparing lazynwb for %d NWB paths.", len(context.benchmark.nwb_paths))
+    _set_catalog_cache_path()
+    os.environ.setdefault("AWS_REGION", "us-west-2")
+
+    lazynwb.config.anon = True
+    _configure_backend(_backend())
+    state.clear()
+
+    state["units"] = lazynwb.scan_nwb(
+        context.benchmark.nwb_paths,
+        "/units",
+        disable_progress=True,
+    )
+    state["trials"] = lazynwb.scan_nwb(
+        context.benchmark.nwb_paths,
+        "/intervals/trials",
+        disable_progress=True,
+    )
 
 
 def submit_answers(context: neurodatabench.RunContext) -> None:
@@ -64,12 +77,7 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
         match question.id:
             case "units_VISp_default_qc":
                 answer = int(
-                    lazynwb.scan_nwb(
-                        context.benchmark.nwb_paths,
-                        "/units",
-                        exclude_array_columns=True,
-                        disable_progress=True,
-                    )
+                    state["units"]
                     .filter((pl.col("structure") == "VISp") & pl.col("default_qc"))
                     .select(pl.len().alias("count"))
                     .collect()
@@ -77,58 +85,23 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
                 )
             case "mean_inter_spike_interval":
                 visp_units = (
-                    lazynwb.scan_nwb(
-                        context.benchmark.nwb_paths,
-                        "/units",
-                        exclude_array_columns=True,
-                        disable_progress=True,
+                    state["units"]
+                    .filter(
+                        pl.col("structure") == "VISp",
+                        pl.col("firing_rate").is_not_null(),
                     )
-                    .filter(pl.col("structure") == "VISp")
-                    .select(["_nwb_path", "_table_index", "firing_rate", "unit_id"])
+                    .sort("firing_rate", descending=True)
+                    .head(1)
+                    .select("spike_times")
                     .collect()
                 )
-                ranked_units = visp_units.filter(
-                    pl.col("firing_rate").is_not_null()
-                ).sort(
-                    "firing_rate",
-                    descending=True,
-                )
-                top_unit = ranked_units.row(0, named=True)
-                nwb_path = str(top_unit["_nwb_path"])
-                table_index = int(top_unit["_table_index"])
-                logger.debug(
-                    "Fetching spike_times for %s table index %d.",
-                    nwb_path,
-                    table_index,
-                )
-                spike_times_df = lazynwb.tables.get_df(
-                    nwb_data_sources=[nwb_path],
-                    search_term="/units",
-                    exact_path=True,
-                    include_column_names=["spike_times"],
-                    nwb_path_to_row_indices={nwb_path: [table_index]},
-                    exclude_array_columns=False,
-                    disable_progress=True,
-                    use_process_pool=False,
-                    as_polars=True,
-                )
-                spike_times = np.asarray(
-                    spike_times_df.select("spike_times").item(),
-                    dtype=np.float64,
-                )
+                spike_times = visp_units["spike_times"][0]
                 answer = float(np.diff(spike_times).max())
             case "mean_trial_length":
                 answer = float(
-                    lazynwb.scan_nwb(
-                        context.benchmark.nwb_paths,
-                        "/intervals/trials",
-                        exclude_array_columns=True,
-                        disable_progress=True,
-                    )
+                    state["trials"]
                     .select(
-                        (pl.col("stop_time") - pl.col("start_time")).mean().alias(
-                            "mean_length"
-                        )
+                        (pl.col("stop_time") - pl.col("start_time")).mean().alias("mean_length")
                     )
                     .collect()
                     .item()
@@ -143,14 +116,52 @@ def teardown(context: neurodatabench.RunContext) -> None:
     pass
 
 
+def _backend() -> str:
+    """Return the requested lazynwb object-store backend label."""
+    return os.environ.get("NDB_OBJECT_STORE_BACKEND", _DEFAULT_BACKEND)
+
+
+def _configure_backend(backend: str) -> None:
+    """Enable the requested lazynwb backend by disabling competing backends."""
+    logger.debug("Configuring lazynwb pre-1.0 backend %s.", backend)
+    if hasattr(lazynwb.config, "use_obstore"):
+        lazynwb.config.use_obstore = backend == "obstore"
+    if hasattr(lazynwb.config, "use_remfile"):
+        lazynwb.config.use_remfile = backend == "remfile"
+    if hasattr(lazynwb.config, "fsspec_storage_options"):
+        lazynwb.config.fsspec_storage_options = {"anon": True}
+
+
+def _set_catalog_cache_path() -> None:
+    """Point lazynwb at a matrix-provided cache or a fresh isolated cache."""
+    cache_path = os.environ.get("NDB_LAZYNWB_CACHE_PATH")
+    if cache_path is None:
+        cache_dir = Path(tempfile.mkdtemp(prefix="neurodatabench-lazynwb-"))
+        cache_path = (cache_dir / "catalog.sqlite").as_posix()
+    else:
+        Path(cache_path).parent.mkdir(parents=True, exist_ok=True)
+    os.environ["LAZYNWB_CATALOG_CACHE_PATH"] = cache_path
+
+
+def _local_cache() -> neurodatabench.models.LocalCacheState:
+    """Return local cache metadata declared for this run."""
+    value = os.environ.get("NDB_LOCAL_CACHE", "cold")
+    if value not in {"cold", "warm"}:
+        raise ValueError("NDB_LOCAL_CACHE must be 'cold' or 'warm' for lazynwb.")
+    return value  # type: ignore[return-value]
+
+
 if __name__ == "__main__":
     neurodatabench.main(
-        implementation_id="lazynwb_v0",
+        implementation_id=os.environ.get(
+            "NDB_IMPLEMENTATION_ID",
+            f"{_DEFAULT_IMPLEMENTATION_ID}_{_backend()}",
+        ),
         implementation_nwb_interface="lazynwb",
-        implementation_object_store_backend="s3fs",
-        implementation_local_cache=None,
+        implementation_object_store_backend=_backend(),
+        implementation_local_cache=_local_cache(),
         implementation_remote_cache=False,
-        benchmark="dynamic_routing_zarr_v0",
+        benchmark=os.environ.get("NDB_BENCHMARK", _DEFAULT_BENCHMARK),
         setup=setup,
         clear_cache=clear_cache,
         submit_answers=submit_answers,

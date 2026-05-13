@@ -2,14 +2,14 @@
 # requires-python = ">=3.10"
 # dependencies = [
 #   "altair",
-#   "lazynwb[pynwb]==1.0.0dev2",
+#   "lazynwb==1.0.0dev3",
 #   "numpy",
-#   "polars==1.38.1",
+#   "polars",
 #   "psutil",
 # ]
 # ///
 
-"""Runnable lazynwb 1.0.0dev2 implementation for the packaged NWB benchmark."""
+"""Runnable lazynwb 1.0.0dev3 implementation for the packaged NWB benchmark."""
 
 from __future__ import annotations
 
@@ -34,6 +34,10 @@ logger = logging.getLogger(__name__)
 
 state = {}
 
+_DEFAULT_BACKEND = "obstore"
+_DEFAULT_BENCHMARK = "dynamic_routing_hdf5_v0"
+_DEFAULT_IMPLEMENTATION_ID = "lazynwb_v1dev3"
+
 
 def clear_cache(context: neurodatabench.RunContext) -> None:
     """Clear lazynwb caches and prepare an isolated catalog path before timing."""
@@ -41,18 +45,17 @@ def clear_cache(context: neurodatabench.RunContext) -> None:
         "Clearing lazynwb caches for %d NWB paths before measured phases.",
         len(context.benchmark.nwb_paths),
     )
-    cache_dir = Path(tempfile.mkdtemp(prefix="neurodatabench-lazynwb-"))
-    os.environ["LAZYNWB_CATALOG_CACHE_PATH"] = (cache_dir / "catalog.sqlite").as_posix()
+    _set_catalog_cache_path()
 
 
 def setup(context: neurodatabench.RunContext) -> None:
     """Configure lazynwb before answering benchmark questions."""
     logger.debug("Preparing lazynwb for %d NWB paths.", len(context.benchmark.nwb_paths))
-    cache_dir = Path(tempfile.mkdtemp(prefix="neurodatabench-lazynwb-"))
-    os.environ["LAZYNWB_CATALOG_CACHE_PATH"] = (cache_dir / "catalog.sqlite").as_posix()
+    _set_catalog_cache_path()
     os.environ.setdefault("AWS_REGION", "us-west-2")
 
     lazynwb.config.anon = True
+    state.clear()
 
     state["units"] = lazynwb.scan_nwb(
         context.benchmark.nwb_paths,
@@ -112,16 +115,38 @@ def teardown(context: neurodatabench.RunContext) -> None:
     pass
 
 
+def _set_catalog_cache_path() -> None:
+    """Point lazynwb at a matrix-provided cache or a fresh isolated cache."""
+    cache_path = os.environ.get("NDB_LAZYNWB_CACHE_PATH")
+    if cache_path is None:
+        cache_dir = Path(tempfile.mkdtemp(prefix="neurodatabench-lazynwb-"))
+        cache_path = (cache_dir / "catalog.sqlite").as_posix()
+    else:
+        Path(cache_path).parent.mkdir(parents=True, exist_ok=True)
+    os.environ["LAZYNWB_CATALOG_CACHE_PATH"] = cache_path
+
+
+def _local_cache() -> neurodatabench.models.LocalCacheState:
+    """Return local cache metadata declared for this run."""
+    value = os.environ.get("NDB_LOCAL_CACHE", "cold")
+    if value not in {"cold", "warm"}:
+        raise ValueError("NDB_LOCAL_CACHE must be 'cold' or 'warm' for lazynwb.")
+    return value  # type: ignore[return-value]
+
+
 if __name__ == "__main__":
     neurodatabench.main(
-        implementation_id="lazynwb_v1_dev2",
+        implementation_id=os.environ.get(
+            "NDB_IMPLEMENTATION_ID",
+            f"{_DEFAULT_IMPLEMENTATION_ID}_{_DEFAULT_BACKEND}_{_local_cache()}",
+        ),
         implementation_nwb_interface="lazynwb",
-        implementation_object_store_backend=None,
-        implementation_local_cache="cold",
+        implementation_object_store_backend=_DEFAULT_BACKEND,
+        implementation_local_cache=_local_cache(),
         implementation_remote_cache=False,
-        benchmark="dynamic_routing_hdf5_v0",
+        benchmark=os.environ.get("NDB_BENCHMARK", _DEFAULT_BENCHMARK),
         setup=setup,
-        clear_cache=clear_cache,
+        clear_cache=None if _local_cache() == "warm" else clear_cache,
         submit_answers=submit_answers,
         teardown=teardown,
     )

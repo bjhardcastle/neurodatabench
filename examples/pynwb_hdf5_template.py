@@ -4,12 +4,14 @@
 #   "altair",
 #   "h5py",
 #   "numpy",
+#   "obstore",
 #   "pandas",
 #   "psutil",
 #   "pydantic>=2.13.4",
 #   "pydantic-settings>=2.14.1",
 #   "pynwb",
 #   "remfile",
+#   "s3fs",
 # ]
 # ///
 
@@ -18,6 +20,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -38,6 +41,10 @@ logger = logging.getLogger(__name__)
 
 state: dict[str, Any] = {}
 
+_DEFAULT_BACKEND = "remfile"
+_DEFAULT_BENCHMARK = "dynamic_routing_hdf5_v0"
+_DEFAULT_IMPLEMENTATION_ID = "pynwb_hdf5_nwbfile"
+
 
 def setup(context: neurodatabench.RunContext) -> None:
     """Open every benchmark NWB file as a PyNWB NWBFile and store it in state."""
@@ -52,8 +59,13 @@ def setup(context: neurodatabench.RunContext) -> None:
     try:
         for nwb_path in context.benchmark.nwb_paths:
             logger.debug("Opening PyNWB NWBFile for %s.", nwb_path)
-            file_obj = remfile.File(_to_https_url(nwb_path))
-            h5_file = h5py.File(file_obj, mode="r")
+            if _backend() == "ros":
+                if not h5py.get_config().ros3:
+                    raise RuntimeError("This h5py build does not include the ROS3 driver.")
+                h5_file = h5py.File(_to_https_url(nwb_path).encode(), mode="r", driver="ros3")
+            else:
+                file_obj = _open_binary_file(nwb_path)
+                h5_file = h5py.File(file_obj, mode="r")
             nwb_io = pynwb.NWBHDF5IO(file=h5_file, mode="r", load_namespaces=True)
             state["files"].append({"nwb_file": nwb_io.read()})
     except Exception:
@@ -97,8 +109,38 @@ def teardown(context: neurodatabench.RunContext) -> None:
 
 def _quiet_storage_debug_loggers() -> None:
     """Keep benchmark debug logs focused on implementation-level events."""
-    for logger_name in ("requests", "urllib3"):
+    for logger_name in ("aiobotocore", "botocore", "fsspec", "requests", "s3fs", "urllib3"):
         logging.getLogger(logger_name).setLevel(logging.WARNING)
+
+
+def _backend() -> str:
+    """Return the requested PyNWB HDF5 object-store backend label."""
+    return os.environ.get("NDB_OBJECT_STORE_BACKEND", _DEFAULT_BACKEND)
+
+
+def _open_binary_file(nwb_path: str) -> Any:
+    """Open one NWB path as a seekable file-like object for h5py."""
+    backend = _backend()
+    if backend == "remfile":
+        return remfile.File(_to_https_url(nwb_path))
+    if backend == "s3fs":
+        import s3fs
+
+        return s3fs.S3FileSystem(anon=True).open(nwb_path, mode="rb")
+    if backend == "ros":
+        raise RuntimeError("ROS3 is opened directly as an h5py.File in setup().")
+    if backend == "obstore":
+        import obstore
+        from obstore.store import S3Store
+
+        bucket, key = _split_s3_uri(nwb_path)
+        store = S3Store(
+            bucket=bucket,
+            config={"region": os.environ.get("AWS_REGION", "us-west-2")},
+            skip_signature=True,
+        )
+        return obstore.open_reader(store, key)
+    raise ValueError(f"Unsupported PyNWB HDF5 backend: {backend}")
 
 
 def _to_https_url(nwb_path: str) -> str:
@@ -109,6 +151,14 @@ def _to_https_url(nwb_path: str) -> str:
         raise ValueError(f"Unsupported remote NWB path: {nwb_path}")
     bucket, key = nwb_path.removeprefix("s3://").split("/", maxsplit=1)
     return f"https://{bucket}.s3.amazonaws.com/{quote(key)}"
+
+
+def _split_s3_uri(nwb_path: str) -> tuple[str, str]:
+    """Split an S3 URI into bucket and key components."""
+    if not nwb_path.startswith("s3://"):
+        raise ValueError(f"Unsupported remote NWB path: {nwb_path}")
+    bucket, key = nwb_path.removeprefix("s3://").split("/", maxsplit=1)
+    return bucket, key
 
 
 def _count_visp_default_qc(file_records: list[dict[str, Any]]) -> int:
@@ -216,12 +266,15 @@ def _string_array(values: Any) -> np.ndarray:
 
 if __name__ == "__main__":
     neurodatabench.main(
-        implementation_id="pynwb_hdf5_nwbfile",
+        implementation_id=os.environ.get(
+            "NDB_IMPLEMENTATION_ID",
+            f"{_DEFAULT_IMPLEMENTATION_ID}_{_backend()}",
+        ),
         implementation_nwb_interface="pynwb",
-        implementation_object_store_backend="remfile",
+        implementation_object_store_backend=_backend(),
         implementation_local_cache=None,
         implementation_remote_cache=None,
-        benchmark="dynamic_routing_hdf5_v0",
+        benchmark=os.environ.get("NDB_BENCHMARK", _DEFAULT_BENCHMARK),
         setup=setup,
         clear_cache=clear_cache,
         submit_answers=submit_answers,
