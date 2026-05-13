@@ -103,9 +103,15 @@ def _leaderboard_plot_chart(
                 alt.Tooltip("nwb_interface:N", title="NWB interface"),
                 alt.Tooltip("object_store_backend:N", title="Object store backend"),
                 alt.Tooltip("benchmark_id:N", title="Benchmark"),
+                alt.Tooltip("run_status:N", title="Run status"),
                 alt.Tooltip("datetime_utc:N", title="Run UTC"),
                 alt.Tooltip("local_cache:N", title="Local cache"),
                 alt.Tooltip("remote_cache:N", title="Remote cache"),
+                alt.Tooltip(
+                    "timeout_seconds:Q",
+                    title="Timeout seconds",
+                    format=",.3f",
+                ),
                 alt.Tooltip(
                     "total_seconds_truncated_label:N",
                     title="Truncated at 20 s",
@@ -150,6 +156,22 @@ def _leaderboard_plot_chart(
             text=alt.Text("plot_total_seconds_label:N"),
         )
     )
+    timeout_labels = (
+        base.transform_filter(alt.datum.timed_out)
+        .mark_text(
+            align="left",
+            baseline="middle",
+            color="#991b1b",
+            dx=6,
+            fontSize=11,
+            fontWeight="bold",
+        )
+        .encode(
+            x=alt.X("plot_total_seconds:Q"),
+            y=y_encoding,
+            text=alt.Text("timed_out_label:N"),
+        )
+    )
     cap_rule = (
         alt.Chart(
             alt.Data(values=[{"cap_seconds": _LEADERBOARD_PLOT_MAX_SECONDS}])
@@ -158,7 +180,7 @@ def _leaderboard_plot_chart(
         .encode(x=alt.X("cap_seconds:Q"))
     )
     return (
-        alt.layer(chart, cap_rule, truncated_labels)
+        alt.layer(chart, cap_rule, truncated_labels, timeout_labels)
         .properties(
             title=alt.TitleParams(
                 text="NeuroDataBench Leaderboard",
@@ -179,10 +201,16 @@ def _leaderboard_plot_rows(
         plot_row = dict(row)
         total_seconds = _json_number_at(row, ("total_seconds",)) or 0.0
         is_truncated = total_seconds > _LEADERBOARD_PLOT_MAX_SECONDS
+        timed_out = row.get("timed_out") is True
         plot_row["plot_total_seconds"] = min(
             total_seconds,
             _LEADERBOARD_PLOT_MAX_SECONDS,
         )
+        plot_row["run_status"] = row.get("run_status") or (
+            "timed out" if timed_out else "correct"
+        )
+        plot_row["timed_out"] = timed_out
+        plot_row["timed_out_label"] = "timed out" if timed_out else ""
         plot_row["total_seconds_truncated"] = is_truncated
         plot_row["total_seconds_truncated_label"] = "yes" if is_truncated else "no"
         plot_row["plot_total_seconds_label"] = (

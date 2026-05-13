@@ -595,7 +595,8 @@ class RunnerTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            out_dir = Path(tmpdir) / "results"
+            results_dir = Path(tmpdir) / "results"
+            out_dir = results_dir / "timeout_run"
 
             def setup(context: neurodatabench.models.RunContext) -> None:
                 """Sleep longer than the benchmark timeout."""
@@ -632,6 +633,15 @@ class RunnerTests(unittest.TestCase):
             self.assertFalse(validation["correct"])
             self.assertTrue(validation["timed_out"])
             self.assertGreater(timings["total_duration_ns"], 0)
+            leaderboard = json.loads(
+                (results_dir / "leaderboard.json").read_text(encoding="utf-8")
+            )
+            self.assertIsInstance(leaderboard, list)
+            self.assertEqual(len(leaderboard), 1)
+            self.assertTrue(leaderboard[0]["timed_out"])
+            self.assertEqual(leaderboard[0]["run_status"], "timed out")
+            self.assertEqual(leaderboard[0]["result_dir"], "timeout_run")
+            self.assertTrue((results_dir / "leaderboard.html").exists())
 
     def test_no_timeout_disables_benchmark_timeout(self) -> None:
         """The runner should allow explicit no-timeout runs."""

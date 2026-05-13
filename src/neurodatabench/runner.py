@@ -851,7 +851,7 @@ def _leaderboard_rows(results_dir: Path) -> list[neurodatabench.models.JsonObjec
 
 
 def _leaderboard_row(run_dir: Path) -> neurodatabench.models.JsonObject | None:
-    """Return one leaderboard row for a complete successful run directory."""
+    """Return one leaderboard row for a complete successful or timed-out run."""
     metadata = _read_json_object(run_dir / "run_metadata.json")
     timings = _read_json_object(run_dir / "timings.json")
     validation = _read_json_object(run_dir / "validation.json")
@@ -861,8 +861,11 @@ def _leaderboard_row(run_dir: Path) -> neurodatabench.models.JsonObject | None:
         or timings is None
         or validation is None
         or profile_summary is None
-        or validation.get("correct") is not True
     ):
+        return None
+    correct = validation.get("correct") is True
+    timed_out = metadata.get("timed_out") is True or validation.get("timed_out") is True
+    if not correct and not timed_out:
         return None
 
     total_duration_ns = _json_number_at(timings, ("total_duration_ns",))
@@ -910,6 +913,10 @@ def _leaderboard_row(run_dir: Path) -> neurodatabench.models.JsonObject | None:
         "nwb_format": str(benchmark.get("nwb_format", "unknown")),
         "local_cache": str(implementation.get("local_cache", "")),
         "remote_cache": str(implementation.get("remote_cache", "")),
+        "correct": correct,
+        "timed_out": timed_out,
+        "run_status": "timed out" if timed_out else "correct",
+        "timeout_seconds": metadata.get("timeout_seconds"),
         "total_seconds": total_duration_ns / 1_000_000_000,
         "setup_seconds": setup_duration_ns / 1_000_000_000,
         "submit_answers_seconds": submit_answers_duration_ns / 1_000_000_000,
@@ -943,6 +950,10 @@ def _write_leaderboard_csv(
         "nwb_format",
         "local_cache",
         "remote_cache",
+        "correct",
+        "timed_out",
+        "run_status",
+        "timeout_seconds",
         "total_seconds",
         "setup_seconds",
         "submit_answers_seconds",

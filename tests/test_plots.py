@@ -31,6 +31,17 @@ class PlotTests(unittest.TestCase):
                 "leaderboard_label": "2. slow",
                 "total_seconds": 24.25,
             },
+            {
+                "rank": 3,
+                "implementation_id": "timeout",
+                "nwb_interface": "pynwb",
+                "object_store_backend": "remfile",
+                "benchmark_id": "benchmark",
+                "leaderboard_label": "3. timeout",
+                "timed_out": True,
+                "total_seconds": 60.0,
+                "timeout_seconds": 60.0,
+            },
         ]
 
         plot_rows = neurodatabench.plots._leaderboard_plot_rows(rows)
@@ -43,6 +54,9 @@ class PlotTests(unittest.TestCase):
         self.assertTrue(plot_rows[1]["total_seconds_truncated"])
         self.assertEqual(plot_rows[1]["total_seconds_truncated_label"], "yes")
         self.assertEqual(plot_rows[1]["plot_total_seconds_label"], "24.2 s")
+        self.assertEqual(plot_rows[2]["plot_total_seconds"], 20.0)
+        self.assertEqual(plot_rows[2]["run_status"], "timed out")
+        self.assertEqual(plot_rows[2]["timed_out_label"], "timed out")
 
     def test_leaderboard_plot_chart_caps_twenty_second_axis(self) -> None:
         """Leaderboard chart axis should cap runtimes at twenty seconds."""
@@ -77,6 +91,8 @@ class PlotTests(unittest.TestCase):
         ]
         self.assertIn("nwb_interface", tooltip_fields)
         self.assertIn("object_store_backend", tooltip_fields)
+        self.assertIn("run_status", tooltip_fields)
+        self.assertIn("timeout_seconds", tooltip_fields)
 
     def test_dashboard_title_includes_stack_metadata_when_present(self) -> None:
         """Run dashboard subtitles should include implementation stack metadata."""
