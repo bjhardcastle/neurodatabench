@@ -185,7 +185,9 @@ def _leaderboard_plot_rows(
         )
         plot_row["total_seconds_truncated"] = is_truncated
         plot_row["total_seconds_truncated_label"] = "yes" if is_truncated else "no"
-        plot_row["plot_total_seconds_label"] = "> 20 s" if is_truncated else ""
+        plot_row["plot_total_seconds_label"] = (
+            f"{total_seconds:,.1f} s" if is_truncated else ""
+        )
         plot_rows.append(plot_row)
     return plot_rows
 

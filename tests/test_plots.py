@@ -42,7 +42,7 @@ class PlotTests(unittest.TestCase):
         self.assertEqual(plot_rows[1]["plot_total_seconds"], 20.0)
         self.assertTrue(plot_rows[1]["total_seconds_truncated"])
         self.assertEqual(plot_rows[1]["total_seconds_truncated_label"], "yes")
-        self.assertEqual(plot_rows[1]["plot_total_seconds_label"], "> 20 s")
+        self.assertEqual(plot_rows[1]["plot_total_seconds_label"], "24.2 s")
 
     def test_leaderboard_plot_chart_caps_twenty_second_axis(self) -> None:
         """Leaderboard chart axis should cap runtimes at twenty seconds."""
