@@ -1,5 +1,29 @@
 # NWB benchmark implementation
 
+## Current Notes
+
+* `examples/lazynwb_template.py` is runnable from the repo checkout with `uv run examples/lazynwb_template.py --out <dir>` by prepending local `src/` before importing `neurodatabench`. It depends on altair, `lazynwb[pynwb]==1.0.0dev2`, numpy, polars, and psutil in its inline script metadata.
+* The lazynwb example imports lazynwb/numpy/polars at module scope, reads NWB paths from each hook's `RunContext` instead of storing a module-level path copy, keeps the per-question lazynwb calls inline in `submit_answers()` instead of hiding them behind question helper functions, points `LAZYNWB_CATALOG_CACHE_PATH` at a fresh temp `catalog.sqlite` path in `setup()` and `clear_cache()`, configures lazynwb in `setup()`, and answers the benchmark questions directly.
+* The lazynwb template fetches `spike_times` for the selected unit through `lazynwb.tables.get_df(...)`.
+* `examples/pynwb_zarr_template.py` is a quick PyNWB/HDMF-Zarr dependency-stack implementation for the same packaged benchmark. A full `NWBZarrIO(...).read()` on the public S3 stores was too slow for a quick baseline, so the example reads the needed DynamicTable Zarr arrays directly (`/units`, `/intervals/trials`) while keeping the PyNWB/HDMF-Zarr dependencies explicit. The direct spike-times helper mirrors PyNWB's `nwbfile.units.get_unit_spike_times(index)` ragged-column lookup without requiring full `NWBFile` materialization. It validated successfully with `uv run examples/pynwb_zarr_template.py --out /tmp/neurodatabench-pynwb-zarr-check --profile-interval-ms 1000` in about 24 seconds.
+* `examples/direct_h5py_template.py` mirrors the direct-array PyNWB Zarr template for `dynamic_routing_hdf5_v0` by reading the needed HDF5 groups with `h5py` through `remfile.File` objects. The benchmark's public `s3://bucket/key` paths are converted to virtual-hosted S3 HTTPS URLs before opening because remfile expects HTTP(S). This used to live at `examples/pynwb_hdf5_template.py`, but it was renamed because it does not materialize PyNWB `NWBFile` objects. It previously validated successfully in about 13 seconds and can now be rerun with `uv run examples/direct_h5py_template.py --fail-fast --log-level INFO`; an earlier raw `s3fs` file-object version was slower because random HDF5 metadata/table access pulled large readahead blocks.
+* `examples/pynwb_hdf5_template.py` is now the intentionally slow true PyNWB HDF5 baseline. Its setup opens every remote NWB path through a local `remfile.File` -> `h5py.File` -> `pynwb.NWBHDF5IO` chain, stores only the resulting `pynwb.NWBFile` objects in module state, and answers by accessing the PyNWB units and trials tables. PyNWB's namespace-loading path expects an `h5py.File`, so do not pass a raw `remfile.File` directly to `NWBHDF5IO(file=...)`. It excludes `spike_times` from the units DataFrame scans, then calls `nwb_file.units.get_unit_spike_times(...)` for the selected fastest VISp unit.
+* Implementation examples prioritize readability, directness, and fair benchmark behavior over complete static typing. Do not add helper functions, casts, or abstractions solely to satisfy type checkers in example scripts.
+* `dynamic_routing_zarr_v0.json` expected answers were replaced with values computed by the lazynwb template from the current public S3 Zarr data: `45`, `2.461157454828708`, and `5.529684329819269`.
+* Validation errors now include both `submitted_answer=...` and `actual_answer=...` diagnostics for missing, duplicate, mismatched, and unknown-question submissions.
+* Answer validation lives in `neurodatabench.validation`; `runner.py` calls it after timed execution by default. End-of-run validation aggregates all missing, duplicate, mismatched, and unknown-question failures into one clean `SystemExit` message so user scripts show diagnostics without a traceback. `main(fail_fast=True)`, CLI `--fail-fast`, or `NDB_FAIL_FAST=true` validates each submitted answer immediately and logs a warning that this mode is for development only, not benchmark runs.
+* Successful runner executions log total/setup/submit-answer duration at INFO level. The default runner log level is INFO so finish timing is visible without a flag.
+* `timings.json` includes explicit `phase_timings` start/stop/duration records and per-answer `submitted_elapsed_seconds`, so the dashboard does not need to reverse-engineer the run structure.
+* Successful result directories copy the inferred implementation hook source to `implementation.py`, record its original path in `run_metadata.json`, and include it in `results_bundle.zip`. Callers can pass `implementation_script=...`, `--implementation-script`, or `NDB_IMPLEMENTATION_SCRIPT` when the hook source is not the desired top-level script.
+* Each successful result directory includes one Altair HTML dashboard, `dashboard.html`, with timing, memory, CPU, and system network panes sharing one elapsed-time domain. Profile panes use absolute units: process+children RSS in MiB, process+children/system CPU in percent, and system network received in MiB since first sample. The dashboard title uses run metadata, including implementation ID, benchmark ID, timestamp, host, harness version, format, and cache metadata. The timing pane omits the redundant total bar and uses thin phase bars; setup completion and answer submission annotations are hover-only vertical markers on the profile panes. Dashboard colors use a named palette in `neurodatabench.plots` that avoids a blue-heavy visual range. The dashboard artifact is included in `results_bundle.zip`, and dashboard rendering lives in `neurodatabench.plots`.
+* Successful runs written under a directory named `results` refresh aggregate leaderboard artifacts in that parent directory: `leaderboard.json`, `leaderboard.csv`, and `leaderboard.html`. Leaderboard rows are built only from complete run directories with `validation.json` reporting `correct: true`, sorted by benchmark ID and total runtime. The leaderboard plot caps visible bars at 20 seconds, marks capped bars with `> 20 s`, and keeps exact totals in the tooltip/JSON/CSV.
+* `neurodatabench.runner.main()` now accepts dedicated implementation metadata fields (`implementation_id`, `implementation_local_cache`, `implementation_remote_cache`) instead of requiring callers to construct `models.Implementation`. If `out` and `--out` are omitted, the runner writes to a timestamped directory named `results/<implementation_id>_<benchmark>_<YYYYmmddTHHMMSSZ>`.
+* Runner configuration now uses `pydantic-settings` rather than `argparse`. Call defaults can be overridden by Settings CLI flags such as `--benchmark`, `--out`, `--profile-interval-ms`, and `--log-level`, while missing values can come from `NDB_` environment variables such as `NDB_BENCHMARK`, `NDB_OUT`, and `NDB_LOG_LEVEL`.
+* `RunContext` is owned by `neurodatabench.models`; examples and templates should annotate hook contexts through the package root as `neurodatabench.RunContext`, not `neurodatabench.runner.RunContext`.
+* The public user API is available from the package root: prefer `import neurodatabench`, `neurodatabench.main(...)`, root model types such as `neurodatabench.RunContext`, and `neurodatabench.models` when the module namespace is useful.
+* `neurodatabench.__version__` is read from installed package metadata via `importlib.metadata`, so `pyproject.toml` remains the single version source.
+* Successful result directories write environment package pins to `requirements.txt`. The file uses requirements-style `name==version` lines, not a mixed `*.lock.txt` naming convention.
+
 
 ## Design decisions
 
@@ -12,7 +36,8 @@
 * `answer_questions()` duration is timed separately from setup.
 * Top-line `total_duration_ns` measures from immediately before `setup()` through `answer_questions()` completion.
 * Per-question timings are not measured by the harness when the implementation answers the full list.
-* Validation happens only after setup, answer, and total timing finish.
+* By default, validation happens only after setup, answer, and total timing finish.
+* Fail-fast validation is an opt-in development aid only; do not use it for benchmark runs because it checks answers during timed submission.
 * `questions.json` contains dataset paths and answers.
 * Do not pass expected answers to implementation.
 * `dataset_paths` appears once at the top of `questions.json` as a list of local paths or remote URIs.
@@ -45,6 +70,7 @@
 * Cache type is declared as free-form implementation metadata; `clear_cache()` is only an optional hook for clearing implementation-managed local caches.
 * `clear_cache()` is untimed and called only before the first measured run; it is not called between repeated runs.
 * No `pip freeze`.
+* Environment package snapshots are written as requirements-style `requirements.txt` artifacts when captured.
 * Use uv inline script metadata for declared dependencies.
 * Harness records platform, datetime, Python, key package versions, CPU, memory, disk, network counters, profiling samples.
 * Implementer declares only:
@@ -1461,6 +1487,7 @@ key_package_versions
 * [ ] Sample process CPU.
 * [ ] Sample process RSS/VMS.
 * [ ] Sample child process RSS/CPU.
+* [ ] Record a synchronous pre-setup RSS baseline and derived peak RSS deltas for fair memory comparison while preserving raw peak RSS.
 * [ ] Sample system CPU.
 * [ ] Sample system memory.
 * [ ] Record network counter delta.
