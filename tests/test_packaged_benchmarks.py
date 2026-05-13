@@ -7,13 +7,8 @@ import unittest
 from importlib import resources
 from typing import Any
 
-from pydantic import TypeAdapter
-
 import neurodatabench.benchmarks
 import neurodatabench.models
-
-
-_BENCHMARK_ADAPTER = TypeAdapter(neurodatabench.models.Benchmark)
 
 
 def _packaged_benchmark_paths() -> list[Any]:
@@ -46,7 +41,7 @@ class PackagedBenchmarkTests(unittest.TestCase):
         for benchmark_path in benchmark_paths:
             with self.subTest(benchmark=benchmark_path.name):
                 data = json.loads(benchmark_path.read_text(encoding="utf-8"))
-                benchmark = _BENCHMARK_ADAPTER.validate_python(data)
+                benchmark = neurodatabench.models.Benchmark.model_validate(data)
 
                 self.assertEqual(
                     benchmark.id,

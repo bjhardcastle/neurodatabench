@@ -2,10 +2,44 @@
 
 from __future__ import annotations
 
+import importlib.metadata
 import logging
 
-__all__ = ["__version__"]
+try:
+    __version__ = importlib.metadata.version("neurodatabench")
+except importlib.metadata.PackageNotFoundError:
+    __version__ = "unknown"
 
-__version__ = "0.1.0"
+import neurodatabench.models as models
+from neurodatabench.models import (
+    AnswerSubmissionTiming,
+    Benchmark,
+    Implementation,
+    JsonObject,
+    JsonPrimitive,
+    JsonValue,
+    Question,
+    RunContext,
+    RunPhaseTiming,
+    RunTimings,
+)
+from neurodatabench.runner import BenchmarkValidationError, main
+
+__all__ = [
+    "AnswerSubmissionTiming",
+    "Benchmark",
+    "BenchmarkValidationError",
+    "Implementation",
+    "JsonObject",
+    "JsonPrimitive",
+    "JsonValue",
+    "Question",
+    "RunContext",
+    "RunPhaseTiming",
+    "RunTimings",
+    "__version__",
+    "main",
+    "models",
+]
 
 logging.getLogger(__name__).addHandler(logging.NullHandler())
