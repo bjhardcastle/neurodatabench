@@ -9,7 +9,9 @@ import importlib.resources
 import inspect
 import json
 import logging
+import os
 import platform
+import signal
 import shutil
 import socket
 import sys
@@ -37,6 +39,10 @@ _REQUIREMENTS_ARTIFACT_NAME = "requirements.txt"
 BenchmarkValidationError = neurodatabench.validation.BenchmarkValidationError
 
 
+class _RunTimeoutError(TimeoutError):
+    """Raised when the benchmark run exceeds its effective timeout."""
+
+
 class _RunConfig(pydantic_settings.BaseSettings):
     """Resolved runner configuration from call defaults, environment, and CLI.
 
@@ -56,6 +62,8 @@ class _RunConfig(pydantic_settings.BaseSettings):
     out: Path | None = None
     implementation_script: Path | None = None
     fail_fast: bool = False
+    timeout_seconds: float | None = pydantic.Field(default=None, gt=0)
+    disable_timeout: bool = False
     profile_interval_ms: int = pydantic.Field(default=250, gt=0)
     log_level: str = "INFO"
 
@@ -214,6 +222,8 @@ def main(
     implementation_script: str | Path | None = None,
     log_level: str | None = None,
     fail_fast: bool | None = None,
+    timeout_seconds: float | None = None,
+    no_timeout: bool | None = None,
     clear_cache: Callable[[neurodatabench.models.RunContext], None] | None = None,
     teardown: Callable[[neurodatabench.models.RunContext], None] | None = None,
     argv: Sequence[str] | None = None,
@@ -233,6 +243,8 @@ def main(
         default_implementation_script=implementation_script,
         default_log_level=log_level,
         default_fail_fast=fail_fast,
+        default_timeout_seconds=timeout_seconds,
+        default_no_timeout=no_timeout,
         implementation_id=implementation.id,
         argv=argv,
     )
@@ -248,6 +260,10 @@ def main(
     assert out_dir is not None
 
     raw_benchmark, loaded_benchmark = _load_benchmark(benchmark_source)
+    effective_timeout_seconds = _effective_timeout_seconds(
+        config=config,
+        benchmark=loaded_benchmark,
+    )
     implementation_script_path = _resolve_implementation_script_path(
         config.implementation_script,
         setup=setup,
@@ -307,6 +323,9 @@ def main(
     setup_duration_ns = 0
     submit_answers_duration_ns = 0
     total_duration_ns = 0
+    timed_out = False
+    current_phase: str | None = None
+    current_phase_start_ns: int | None = None
 
     if clear_cache is not None:
         logger.debug("Running untimed clear_cache.")
@@ -314,17 +333,33 @@ def main(
 
     profiler.start()
     try:
-        run_start_wall_time_ns = time.time_ns()
-        total_start_ns = perf_counter_ns()
-        run_start_ns = total_start_ns
-        setup_start_ns = perf_counter_ns()
-        setup(context)
-        setup_duration_ns = perf_counter_ns() - setup_start_ns
+        with _RunTimeout(effective_timeout_seconds):
+            run_start_wall_time_ns = time.time_ns()
+            total_start_ns = perf_counter_ns()
+            run_start_ns = total_start_ns
+            current_phase = "setup"
+            current_phase_start_ns = perf_counter_ns()
+            setup(context)
+            setup_duration_ns = perf_counter_ns() - current_phase_start_ns
 
-        submit_answers_start_ns = perf_counter_ns()
-        submit_answers(context)
-        submit_answers_duration_ns = perf_counter_ns() - submit_answers_start_ns
-        total_duration_ns = perf_counter_ns() - total_start_ns
+            current_phase = "submit_answers"
+            current_phase_start_ns = perf_counter_ns()
+            submit_answers(context)
+            submit_answers_duration_ns = perf_counter_ns() - current_phase_start_ns
+            total_duration_ns = perf_counter_ns() - total_start_ns
+            current_phase = None
+            current_phase_start_ns = None
+    except _RunTimeoutError:
+        timed_out = True
+        assert effective_timeout_seconds is not None
+        logger.debug("Benchmark timed out at %.3f seconds.", effective_timeout_seconds)
+        now_ns = perf_counter_ns()
+        if total_start_ns is not None:
+            total_duration_ns = now_ns - total_start_ns
+        if current_phase == "setup" and current_phase_start_ns is not None:
+            setup_duration_ns = now_ns - current_phase_start_ns
+        elif current_phase == "submit_answers" and current_phase_start_ns is not None:
+            submit_answers_duration_ns = now_ns - current_phase_start_ns
     finally:
         profiler.stop()
         if teardown is not None:
@@ -353,15 +388,25 @@ def main(
             for submitted_answer in submitted_answers
         ],
     )
-    try:
-        neurodatabench.validation.validate_answers(loaded_benchmark, submitted_answers)
-    except neurodatabench.validation.BenchmarkValidationError as error:
-        raise SystemExit(str(error)) from None
+    validation: neurodatabench.models.JsonObject
+    if timed_out:
+        validation = {"correct": False, "timed_out": True}
+    else:
+        try:
+            neurodatabench.validation.validate_answers(
+                loaded_benchmark,
+                submitted_answers,
+            )
+        except neurodatabench.validation.BenchmarkValidationError as error:
+            raise SystemExit(str(error)) from None
+        validation = {"correct": True, "timed_out": False}
     metadata = _run_metadata(
         implementation=implementation,
         benchmark_source=benchmark_source,
         benchmark=loaded_benchmark,
         implementation_script_path=implementation_script_path,
+        timeout_seconds=effective_timeout_seconds,
+        timed_out=timed_out,
     )
     _write_result_artifacts(
         out_dir=out_dir,
@@ -369,11 +414,16 @@ def main(
         metadata=metadata,
         implementation_script_path=implementation_script_path,
         timings=timings,
-        validation={"correct": True},
+        validation=validation,
         profile_samples=profiler.samples,
         profile_summary=profiler.summary(),
         run_start_wall_time_ns=run_start_wall_time_ns,
     )
+    if timed_out:
+        assert effective_timeout_seconds is not None
+        raise SystemExit(
+            f"Benchmark timed out at {effective_timeout_seconds:g} seconds"
+        ) from None
     logger.info(
         "Benchmark run completed in %.3f s (setup %.3f s, submit_answers %.3f s).",
         total_duration_ns / 1_000_000_000,
@@ -390,6 +440,8 @@ def _resolve_config(
     implementation_id: str,
     argv: Sequence[str] | None,
     default_fail_fast: bool | None = None,
+    default_timeout_seconds: float | None = None,
+    default_no_timeout: bool | None = None,
     default_implementation_script: str | Path | None = None,
 ) -> _RunConfig:
     """Resolve call defaults with Pydantic Settings overrides."""
@@ -406,9 +458,15 @@ def _resolve_config(
         settings_kwargs["log_level"] = default_log_level
     if default_fail_fast is not None:
         settings_kwargs["fail_fast"] = default_fail_fast
+    if default_timeout_seconds is not None:
+        settings_kwargs["timeout_seconds"] = default_timeout_seconds
+    if default_no_timeout is not None:
+        settings_kwargs["disable_timeout"] = default_no_timeout
+    elif "NDB_DISABLE_TIMEOUT" not in os.environ and "NDB_NO_TIMEOUT" in os.environ:
+        settings_kwargs["disable_timeout"] = os.environ["NDB_NO_TIMEOUT"]
     config = _RunConfig(
         **settings_kwargs,
-        _cli_parse_args=tuple(argv) if argv is not None else None,
+        _cli_parse_args=_normalize_cli_args(argv),
     )
     if config.benchmark is None:
         raise ValueError("benchmark must be provided to main() or --benchmark")
@@ -418,6 +476,82 @@ def _resolve_config(
             benchmark=config.benchmark,
         )
     return config
+
+
+def _normalize_cli_args(argv: Sequence[str] | None) -> tuple[str, ...] | None:
+    """Normalize user-friendly runner CLI aliases before settings parsing."""
+    if argv is None:
+        return None
+    return tuple("--disable-timeout" if arg == "--no-timeout" else arg for arg in argv)
+
+
+def _effective_timeout_seconds(
+    *,
+    config: _RunConfig,
+    benchmark: neurodatabench.models.Benchmark,
+) -> float | None:
+    """Return the timeout enforced for this run."""
+    if config.disable_timeout:
+        logger.debug("Timeout disabled by runner configuration.")
+        return None
+    if config.timeout_seconds is not None:
+        logger.debug(
+            "Using runner timeout override of %.3f seconds.",
+            config.timeout_seconds,
+        )
+        return config.timeout_seconds
+    logger.debug("Using benchmark timeout of %s seconds.", benchmark.timeout_seconds)
+    return benchmark.timeout_seconds
+
+
+class _RunTimeout:
+    """Temporarily enforce a wall-clock timeout with SIGALRM."""
+
+    def __init__(self, timeout_seconds: float | None) -> None:
+        """Create a timeout guard for the given duration."""
+        self.timeout_seconds = timeout_seconds
+        self._previous_handler: signal.Handlers | Callable[..., object] | int | None = (
+            None
+        )
+        self._previous_timer: tuple[float, float] | None = None
+
+    def __enter__(self) -> None:
+        """Install the timeout alarm."""
+        if self.timeout_seconds is None:
+            return
+        if threading.current_thread() is not threading.main_thread():
+            raise RuntimeError("timeout enforcement requires the main thread")
+        logger.debug("Enforcing %.3f second benchmark timeout.", self.timeout_seconds)
+        self._previous_handler = signal.getsignal(signal.SIGALRM)
+        self._previous_timer = signal.setitimer(signal.ITIMER_REAL, 0.0)
+        signal.signal(signal.SIGALRM, self._raise_timeout)
+        signal.setitimer(signal.ITIMER_REAL, self.timeout_seconds)
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: object,
+    ) -> bool:
+        """Restore the previous alarm state."""
+        if self.timeout_seconds is None:
+            return False
+        signal.setitimer(signal.ITIMER_REAL, 0.0)
+        if self._previous_handler is not None:
+            signal.signal(signal.SIGALRM, self._previous_handler)
+        if self._previous_timer is not None:
+            delay_seconds, interval_seconds = self._previous_timer
+            if delay_seconds > 0 or interval_seconds > 0:
+                signal.setitimer(
+                    signal.ITIMER_REAL,
+                    delay_seconds,
+                    interval_seconds,
+                )
+        return False
+
+    def _raise_timeout(self, signum: int, frame: object) -> None:
+        """Raise the timeout exception from the alarm signal handler."""
+        raise _RunTimeoutError
 
 
 def _default_output_dir(*, implementation_id: str, benchmark: str) -> Path:
@@ -566,12 +700,16 @@ def _run_metadata(
     benchmark_source: str,
     benchmark: neurodatabench.models.Benchmark,
     implementation_script_path: Path | None,
+    timeout_seconds: float | None,
+    timed_out: bool,
 ) -> neurodatabench.models.JsonObject:
     """Collect run metadata."""
     return {
         "datetime_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "hostname": socket.gethostname(),
         "benchmark_harness_version": _package_version("neurodatabench"),
+        "timeout_seconds": timeout_seconds,
+        "timed_out": timed_out,
         "implementation": _jsonable(implementation),
         "benchmark": {
             "id": benchmark.id,

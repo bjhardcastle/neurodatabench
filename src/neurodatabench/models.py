@@ -32,6 +32,7 @@ class Benchmark(pydantic.BaseModel):
     id: str
     nwb_paths: list[str]
     nwb_format: Literal["hdf5", "zarr"]
+    timeout_seconds: float | None = pydantic.Field(default=None, gt=0)
     questions: list[Question]
 
 

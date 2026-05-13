@@ -93,7 +93,10 @@ class RunnerTests(unittest.TestCase):
 
             validation = _read_json(out_dir / "validation.json")
             self.assertTrue(validation["correct"])
+            self.assertFalse(validation["timed_out"])
             metadata = _read_json(out_dir / "run_metadata.json")
+            self.assertEqual(metadata["timeout_seconds"], 60)
+            self.assertFalse(metadata["timed_out"])
             self.assertEqual(metadata["implementation"]["id"], "test-implementation")
             self.assertEqual(metadata["implementation"]["nwb_interface"], "pynwb")
             self.assertEqual(
@@ -510,6 +513,169 @@ class RunnerTests(unittest.TestCase):
         self.assertFalse(call_config.fail_fast)
         self.assertTrue(cli_config.fail_fast)
 
+    def test_timeout_config_resolves_from_call_cli_environment_and_no_timeout(
+        self,
+    ) -> None:
+        """Timeout settings should support overrides and explicit disabling."""
+        with unittest.mock.patch.dict(
+            os.environ,
+            {"NDB_TIMEOUT_SECONDS": "30", "NDB_NO_TIMEOUT": "false"},
+        ):
+            env_config = neurodatabench.runner._resolve_config(
+                default_benchmark="dynamic_routing_zarr_v0",
+                default_out=None,
+                default_log_level=None,
+                implementation_id="test-implementation",
+                argv=(),
+            )
+            call_config = neurodatabench.runner._resolve_config(
+                default_benchmark="dynamic_routing_zarr_v0",
+                default_out=None,
+                default_log_level=None,
+                default_timeout_seconds=45,
+                implementation_id="test-implementation",
+                argv=(),
+            )
+            cli_config = neurodatabench.runner._resolve_config(
+                default_benchmark="dynamic_routing_zarr_v0",
+                default_out=None,
+                default_log_level=None,
+                default_timeout_seconds=45,
+                implementation_id="test-implementation",
+                argv=("--timeout-seconds", "60"),
+            )
+            disabled_config = neurodatabench.runner._resolve_config(
+                default_benchmark="dynamic_routing_zarr_v0",
+                default_out=None,
+                default_log_level=None,
+                default_timeout_seconds=45,
+                default_no_timeout=True,
+                implementation_id="test-implementation",
+                argv=(),
+            )
+            cli_disabled_config = neurodatabench.runner._resolve_config(
+                default_benchmark="dynamic_routing_zarr_v0",
+                default_out=None,
+                default_log_level=None,
+                implementation_id="test-implementation",
+                argv=("--no-timeout",),
+            )
+
+        benchmark = neurodatabench.models.Benchmark.model_validate(
+            _benchmark_json(
+                "timeout-config",
+                [{"id": "q", "text": "Q", "answer": 1}],
+                timeout_seconds=120,
+            )
+        )
+        self.assertEqual(env_config.timeout_seconds, 30)
+        self.assertEqual(call_config.timeout_seconds, 45)
+        self.assertEqual(cli_config.timeout_seconds, 60)
+        self.assertFalse(env_config.disable_timeout)
+        self.assertTrue(cli_disabled_config.disable_timeout)
+        self.assertEqual(
+            neurodatabench.runner._effective_timeout_seconds(
+                config=disabled_config,
+                benchmark=benchmark,
+            ),
+            None,
+        )
+
+    def test_timed_out_run_writes_result_artifacts(self) -> None:
+        """A timed-out run should write inspectable artifacts and exit cleanly."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            benchmark_path = Path(tmpdir) / "timeout.json"
+            benchmark_path.write_text(
+                json.dumps(
+                    _benchmark_json(
+                        "timeout",
+                        [{"id": "q", "text": "Q", "answer": 1}],
+                        timeout_seconds=0.01,
+                    )
+                ),
+                encoding="utf-8",
+            )
+            out_dir = Path(tmpdir) / "results"
+
+            def setup(context: neurodatabench.models.RunContext) -> None:
+                """Sleep longer than the benchmark timeout."""
+                time.sleep(0.05)
+
+            def submit_answers(context: neurodatabench.models.RunContext) -> None:
+                """This should not run after setup times out."""
+                context.submit_answer("q", 1)
+
+            with self.assertRaises(SystemExit) as error:
+                neurodatabench.runner.main(
+                    implementation_id="test-implementation",
+                    implementation_local_cache=None,
+                    implementation_remote_cache=False,
+                    benchmark=benchmark_path,
+                    out=out_dir,
+                    setup=setup,
+                    submit_answers=submit_answers,
+                    argv=(),
+                )
+
+            self.assertEqual(
+                str(error.exception),
+                "Benchmark timed out at 0.01 seconds",
+            )
+            self.assertTrue((out_dir / "run_metadata.json").exists())
+            self.assertTrue((out_dir / "validation.json").exists())
+            self.assertTrue((out_dir / "results_bundle.zip").exists())
+            metadata = _read_json(out_dir / "run_metadata.json")
+            validation = _read_json(out_dir / "validation.json")
+            timings = _read_json(out_dir / "timings.json")
+            self.assertEqual(metadata["timeout_seconds"], 0.01)
+            self.assertTrue(metadata["timed_out"])
+            self.assertFalse(validation["correct"])
+            self.assertTrue(validation["timed_out"])
+            self.assertGreater(timings["total_duration_ns"], 0)
+
+    def test_no_timeout_disables_benchmark_timeout(self) -> None:
+        """The runner should allow explicit no-timeout runs."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            benchmark_path = Path(tmpdir) / "no-timeout.json"
+            benchmark_path.write_text(
+                json.dumps(
+                    _benchmark_json(
+                        "no-timeout",
+                        [{"id": "q", "text": "Q", "answer": 1}],
+                        timeout_seconds=0.01,
+                    )
+                ),
+                encoding="utf-8",
+            )
+            out_dir = Path(tmpdir) / "results"
+
+            def setup(context: neurodatabench.models.RunContext) -> None:
+                """Sleep longer than the benchmark timeout."""
+                time.sleep(0.02)
+
+            def submit_answers(context: neurodatabench.models.RunContext) -> None:
+                """Submit the expected answer."""
+                context.submit_answer("q", 1)
+
+            neurodatabench.runner.main(
+                implementation_id="test-implementation",
+                implementation_local_cache=None,
+                implementation_remote_cache=False,
+                benchmark=benchmark_path,
+                out=out_dir,
+                setup=setup,
+                submit_answers=submit_answers,
+                no_timeout=True,
+                argv=(),
+            )
+
+            metadata = _read_json(out_dir / "run_metadata.json")
+            validation = _read_json(out_dir / "validation.json")
+            self.assertIsNone(metadata["timeout_seconds"])
+            self.assertFalse(metadata["timed_out"])
+            self.assertTrue(validation["correct"])
+            self.assertFalse(validation["timed_out"])
+
     def test_invalid_log_level_raises(self) -> None:
         """Invalid log levels should fail during settings validation."""
         with self.assertRaises(pydantic.ValidationError):
@@ -828,14 +994,18 @@ class RunnerTests(unittest.TestCase):
 def _benchmark_json(
     benchmark_id: str,
     questions: list[dict[str, object]],
+    timeout_seconds: float | None = None,
 ) -> dict[str, object]:
     """Return a minimal benchmark JSON object."""
-    return {
+    benchmark: dict[str, object] = {
         "id": benchmark_id,
         "nwb_paths": ["file:///tmp/test.nwb"],
         "nwb_format": "hdf5",
         "questions": questions,
     }
+    if timeout_seconds is not None:
+        benchmark["timeout_seconds"] = timeout_seconds
+    return benchmark
 
 
 def _read_json(path: Path) -> dict[str, object]:
