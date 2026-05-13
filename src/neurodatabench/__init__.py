@@ -11,6 +11,7 @@ except importlib.metadata.PackageNotFoundError:
     __version__ = "unknown"
 
 import neurodatabench.models as models
+import neurodatabench.validation as validation
 from neurodatabench.models import (
     AnswerSubmissionTiming,
     Benchmark,
@@ -40,6 +41,7 @@ __all__ = [
     "__version__",
     "main",
     "models",
+    "validation",
 ]
 
 logging.getLogger(__name__).addHandler(logging.NullHandler())

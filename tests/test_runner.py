@@ -17,6 +17,7 @@ import pydantic
 import neurodatabench
 import neurodatabench.models
 import neurodatabench.runner
+import neurodatabench.validation
 
 
 class RunnerTests(unittest.TestCase):
@@ -26,9 +27,14 @@ class RunnerTests(unittest.TestCase):
         """The package root should expose main and model types."""
         self.assertIs(neurodatabench.main, neurodatabench.runner.main)
         self.assertTrue(hasattr(neurodatabench, "models"))
+        self.assertTrue(hasattr(neurodatabench, "validation"))
         self.assertIs(neurodatabench.RunContext, neurodatabench.models.RunContext)
         self.assertIs(neurodatabench.Benchmark, neurodatabench.models.Benchmark)
         self.assertIs(neurodatabench.RunPhaseTiming, neurodatabench.models.RunPhaseTiming)
+        self.assertIs(
+            neurodatabench.BenchmarkValidationError,
+            neurodatabench.validation.BenchmarkValidationError,
+        )
 
     def test_main_runs_packaged_benchmark_by_name(self) -> None:
         """A call-first run should load a packaged benchmark and write artifacts."""
@@ -71,6 +77,7 @@ class RunnerTests(unittest.TestCase):
             self.assertTrue((out_dir / "profile_samples.jsonl").exists())
             self.assertTrue((out_dir / "profile_summary.json").exists())
             self.assertTrue((out_dir / "dashboard.html").exists())
+            self.assertTrue((out_dir / "implementation.py").exists())
             self.assertFalse((out_dir / "timing_summary.html").exists())
             self.assertFalse((out_dir / "memory_profile.html").exists())
             self.assertFalse((out_dir / "cpu_profile.html").exists())
@@ -84,6 +91,14 @@ class RunnerTests(unittest.TestCase):
 
             validation = _read_json(out_dir / "validation.json")
             self.assertTrue(validation["correct"])
+            metadata = _read_json(out_dir / "run_metadata.json")
+            self.assertEqual(
+                metadata["implementation_script"],
+                {
+                    "artifact": "implementation.py",
+                    "source": str(Path(__file__).resolve()),
+                },
+            )
             profile_summary = _read_json(out_dir / "profile_summary.json")
             self.assertIsInstance(profile_summary["baseline_process_rss_bytes"], int)
             self.assertIsInstance(
@@ -121,6 +136,7 @@ class RunnerTests(unittest.TestCase):
             with zipfile.ZipFile(out_dir / "results_bundle.zip") as bundle:
                 bundle_names = set(bundle.namelist())
             self.assertIn("dashboard.html", bundle_names)
+            self.assertIn("implementation.py", bundle_names)
             self.assertNotIn("timing_summary.html", bundle_names)
             self.assertNotIn("memory_profile.html", bundle_names)
             self.assertNotIn("cpu_profile.html", bundle_names)
@@ -429,6 +445,37 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(call_config.log_level, "INFO")
         self.assertEqual(cli_config.log_level, "DEBUG")
 
+    def test_fail_fast_config_resolves_from_call_cli_and_environment(self) -> None:
+        """Fail-fast validation should resolve from all settings inputs."""
+        with unittest.mock.patch.dict(os.environ, {"NDB_FAIL_FAST": "true"}):
+            env_config = neurodatabench.runner._resolve_config(
+                default_benchmark="dynamic_routing_zarr_v0",
+                default_out=None,
+                default_log_level=None,
+                implementation_id="test-implementation",
+                argv=(),
+            )
+            call_config = neurodatabench.runner._resolve_config(
+                default_benchmark="dynamic_routing_zarr_v0",
+                default_out=None,
+                default_log_level=None,
+                default_fail_fast=False,
+                implementation_id="test-implementation",
+                argv=(),
+            )
+            cli_config = neurodatabench.runner._resolve_config(
+                default_benchmark="dynamic_routing_zarr_v0",
+                default_out=None,
+                default_log_level=None,
+                default_fail_fast=False,
+                implementation_id="test-implementation",
+                argv=("--fail-fast",),
+            )
+
+        self.assertTrue(env_config.fail_fast)
+        self.assertFalse(call_config.fail_fast)
+        self.assertTrue(cli_config.fail_fast)
+
     def test_invalid_log_level_raises(self) -> None:
         """Invalid log levels should fail during settings validation."""
         with self.assertRaises(pydantic.ValidationError):
@@ -480,8 +527,8 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(len(logs.output), 1)
             self.assertIn("list", logs.output[0])
 
-    def test_validation_failures_raise(self) -> None:
-        """Validation should raise on the first invalid answer."""
+    def test_validation_failures_exit_with_all_errors(self) -> None:
+        """Final validation should exit cleanly with every invalid answer."""
         with tempfile.TemporaryDirectory() as tmpdir:
             benchmark_path = Path(tmpdir) / "bad.json"
             benchmark_path.write_text(
@@ -509,10 +556,7 @@ class RunnerTests(unittest.TestCase):
                 context.submit_answer("unknown", 5)
 
             out_dir = Path(tmpdir) / "results"
-            with self.assertRaisesRegex(
-                neurodatabench.runner.BenchmarkValidationError,
-                "missing: missing_answer; submitted_answer=<missing>; actual_answer=1",
-            ):
+            with self.assertRaises(SystemExit) as error:
                 neurodatabench.runner.main(
                     implementation_id="test-implementation",
                     implementation_local_cache=False,
@@ -522,6 +566,28 @@ class RunnerTests(unittest.TestCase):
                     setup=setup,
                     submit_answers=submit_answers,
                     argv=(),
+            )
+            message = str(error.exception)
+            self.assertIn(
+                "Benchmark answers failed validation:",
+                message,
+            )
+            self.assertIn(
+                "- missing: missing_answer; submitted_answer=<missing>; actual_answer=1",
+                message,
+            )
+            self.assertIn(
+                "- duplicate: duplicate_answer; submitted_answer=[2, 2]; actual_answer=2",
+                message,
+            )
+            self.assertIn(
+                "- wrong: exact_int; submitted_answer=4; actual_answer=3",
+                message,
+            )
+            self.assertIn(
+                "- unknown: unknown_question_id; submitted_answer=5; "
+                "actual_answer=<unknown_question_id>",
+                message,
             )
             self.assertFalse((out_dir / "validation.json").exists())
             self.assertFalse(out_dir.exists())
@@ -585,9 +651,9 @@ class RunnerTests(unittest.TestCase):
                     _benchmark_json(benchmark_id, [question])
                 )
                 with self.assertRaises(
-                    neurodatabench.runner.BenchmarkValidationError
+                    neurodatabench.validation.BenchmarkValidationError
                 ) as error:
-                    neurodatabench.runner._validate_answers(
+                    neurodatabench.validation.validate_answers(
                         benchmark,
                         submitted_answers,
                     )
@@ -595,6 +661,56 @@ class RunnerTests(unittest.TestCase):
                 message = str(error.exception)
                 for expected_part in expected_parts:
                     self.assertIn(expected_part, message)
+
+    def test_fail_fast_validation_raises_during_submission(self) -> None:
+        """Fail-fast mode should validate answers as soon as they are submitted."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            benchmark_path = Path(tmpdir) / "bad-fast.json"
+            benchmark_path.write_text(
+                json.dumps(
+                    _benchmark_json(
+                        "bad-fast",
+                        [
+                            {"id": "first", "text": "Q", "answer": 1},
+                            {"id": "second", "text": "Q", "answer": 2},
+                        ],
+                    )
+                ),
+                encoding="utf-8",
+            )
+            events: list[str] = []
+
+            def setup(context: neurodatabench.models.RunContext) -> None:
+                """No setup required."""
+
+            def submit_answers(context: neurodatabench.models.RunContext) -> None:
+                """Submit one correct answer and then one wrong answer."""
+                context.submit_answer("first", 1)
+                events.append("after_first")
+                context.submit_answer("second", 99)
+                events.append("after_wrong")
+
+            out_dir = Path(tmpdir) / "results"
+            with self.assertLogs("neurodatabench.runner", level="WARNING") as logs:
+                with self.assertRaisesRegex(
+                    neurodatabench.runner.BenchmarkValidationError,
+                    "second: exact_int; submitted_answer=99; actual_answer=2",
+                ):
+                    neurodatabench.runner.main(
+                        implementation_id="test-implementation",
+                        implementation_local_cache=False,
+                        implementation_remote_cache=False,
+                        benchmark=benchmark_path,
+                        out=out_dir,
+                        setup=setup,
+                        submit_answers=submit_answers,
+                        fail_fast=True,
+                        argv=(),
+                    )
+
+            self.assertEqual(events, ["after_first"])
+            self.assertFalse(out_dir.exists())
+            self.assertIn("development only", "\n".join(logs.output))
 
     def test_user_code_failure_does_not_leave_empty_output_directory(self) -> None:
         """A failing implementation should not leave an empty result directory."""

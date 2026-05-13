@@ -6,9 +6,11 @@ import dataclasses
 import csv
 import importlib.metadata
 import importlib.resources
+import inspect
 import json
 import logging
 import platform
+import shutil
 import socket
 import sys
 import threading
@@ -20,7 +22,6 @@ from pathlib import Path
 from time import perf_counter_ns
 from typing import Any, Literal
 
-import numpy as np
 import pydantic
 import pydantic_settings
 import psutil
@@ -28,15 +29,12 @@ import psutil
 import neurodatabench.benchmarks
 import neurodatabench.models
 import neurodatabench.plots
+import neurodatabench.validation
 
 logger = logging.getLogger(__name__)
-_MISSING_ANSWER = object()
-_UNKNOWN_ANSWER = object()
+_IMPLEMENTATION_SCRIPT_ARTIFACT_NAME = "implementation.py"
 _REQUIREMENTS_ARTIFACT_NAME = "requirements.txt"
-
-
-class BenchmarkValidationError(RuntimeError):
-    """Raised when a benchmark run completes with incorrect answers."""
+BenchmarkValidationError = neurodatabench.validation.BenchmarkValidationError
 
 
 class _RunConfig(pydantic_settings.BaseSettings):
@@ -48,6 +46,7 @@ class _RunConfig(pydantic_settings.BaseSettings):
     """
 
     model_config = pydantic_settings.SettingsConfigDict(
+        cli_implicit_flags=True,
         cli_kebab_case=True,
         cli_parse_args=True,
         env_prefix="NDB_",
@@ -55,6 +54,8 @@ class _RunConfig(pydantic_settings.BaseSettings):
 
     benchmark: str | None = None
     out: Path | None = None
+    implementation_script: Path | None = None
+    fail_fast: bool = False
     profile_interval_ms: int = pydantic.Field(default=250, gt=0)
     log_level: str = "INFO"
 
@@ -208,7 +209,9 @@ def main(
     implementation_remote_cache: bool = False,
     benchmark: str | Path | None = None,
     out: str | Path | None = None,
+    implementation_script: str | Path | None = None,
     log_level: str | None = None,
+    fail_fast: bool | None = None,
     clear_cache: Callable[[neurodatabench.models.RunContext], None] | None = None,
     teardown: Callable[[neurodatabench.models.RunContext], None] | None = None,
     argv: Sequence[str] | None = None,
@@ -223,17 +226,29 @@ def main(
     config = _resolve_config(
         default_benchmark=benchmark,
         default_out=out,
+        default_implementation_script=implementation_script,
         default_log_level=log_level,
+        default_fail_fast=fail_fast,
         implementation_id=implementation.id,
         argv=argv,
     )
     _configure_logging(config.log_level)
+    if config.fail_fast:
+        logger.warning(
+            "Fail-fast answer validation is enabled. Use it during development only, "
+            "not for benchmark runs."
+        )
     benchmark_source = config.benchmark
     out_dir = config.out
     assert benchmark_source is not None
     assert out_dir is not None
 
     raw_benchmark, loaded_benchmark = _load_benchmark(benchmark_source)
+    implementation_script_path = _resolve_implementation_script_path(
+        config.implementation_script,
+        setup=setup,
+        submit_answers=submit_answers,
+    )
     submitted_answers: list[dict[str, Any]] = []
     run_start_ns: int | None = None
     run_start_wall_time_ns = 0
@@ -243,8 +258,21 @@ def main(
         answer: neurodatabench.models.JsonValue,
     ) -> None:
         """Capture one submitted answer with wall-clock time."""
-        expected = _expected_answer(loaded_benchmark, question_id)
-        reused_expected_object = isinstance(expected, (dict, list)) and answer is expected
+        expected = neurodatabench.validation.expected_answer(
+            loaded_benchmark,
+            question_id,
+        )
+        reused_expected_object = (
+            isinstance(expected, (dict, list)) and answer is expected
+        )
+        if config.fail_fast:
+            logger.debug("Fail-fast validating answer for question %s.", question_id)
+            neurodatabench.validation.validate_answer_submission(
+                loaded_benchmark,
+                submitted_answers,
+                question_id,
+                answer,
+            )
         submitted_at = datetime.now(timezone.utc).isoformat()
         submitted_elapsed_seconds = (
             None
@@ -321,16 +349,21 @@ def main(
             for submitted_answer in submitted_answers
         ],
     )
-    _validate_answers(loaded_benchmark, submitted_answers)
+    try:
+        neurodatabench.validation.validate_answers(loaded_benchmark, submitted_answers)
+    except neurodatabench.validation.BenchmarkValidationError as error:
+        raise SystemExit(str(error)) from None
     metadata = _run_metadata(
         implementation=implementation,
         benchmark_source=benchmark_source,
         benchmark=loaded_benchmark,
+        implementation_script_path=implementation_script_path,
     )
     _write_result_artifacts(
         out_dir=out_dir,
         raw_benchmark=raw_benchmark,
         metadata=metadata,
+        implementation_script_path=implementation_script_path,
         timings=timings,
         validation={"correct": True},
         profile_samples=profiler.samples,
@@ -352,6 +385,8 @@ def _resolve_config(
     default_log_level: str | None,
     implementation_id: str,
     argv: Sequence[str] | None,
+    default_fail_fast: bool | None = None,
+    default_implementation_script: str | Path | None = None,
 ) -> _RunConfig:
     """Resolve call defaults with Pydantic Settings overrides."""
     settings_kwargs: dict[str, object] = {}
@@ -359,8 +394,14 @@ def _resolve_config(
         settings_kwargs["benchmark"] = str(default_benchmark)
     if default_out is not None:
         settings_kwargs["out"] = Path(default_out)
+    if default_implementation_script is not None:
+        settings_kwargs["implementation_script"] = Path(
+            default_implementation_script,
+        )
     if default_log_level is not None:
         settings_kwargs["log_level"] = default_log_level
+    if default_fail_fast is not None:
+        settings_kwargs["fail_fast"] = default_fail_fast
     config = _RunConfig(
         **settings_kwargs,
         _cli_parse_args=tuple(argv) if argv is not None else None,
@@ -420,77 +461,6 @@ def _load_benchmark(
     return raw, loaded
 
 
-def _expected_answer(
-    benchmark: neurodatabench.models.Benchmark,
-    question_id: str,
-) -> neurodatabench.models.JsonValue | None:
-    """Return the expected answer for a question ID, if present."""
-    for question in benchmark.questions:
-        if question.id == question_id:
-            return question.answer
-    return None
-
-
-def _validate_answers(
-    benchmark: neurodatabench.models.Benchmark,
-    submitted_answers: list[dict[str, Any]],
-) -> None:
-    """Raise as soon as any submitted answer is invalid."""
-    by_question_id: dict[str, list[dict[str, Any]]] = {}
-    for submitted_answer in submitted_answers:
-        question_id = str(submitted_answer["question_id"])
-        by_question_id.setdefault(question_id, []).append(submitted_answer)
-
-    for question in benchmark.questions:
-        matches = by_question_id.get(question.id, [])
-        if not matches:
-            raise BenchmarkValidationError(
-                _validation_error_message(
-                    question_id=question.id,
-                    reason="missing_answer",
-                    actual_answer=question.answer,
-                    submitted_answer=_MISSING_ANSWER,
-                )
-            )
-        if len(matches) > 1:
-            raise BenchmarkValidationError(
-                _validation_error_message(
-                    question_id=question.id,
-                    reason="duplicate_answer",
-                    actual_answer=question.answer,
-                    submitted_answer=[match["answer"] for match in matches],
-                )
-            )
-
-        submitted_answer = matches[0]
-        mismatch_reason = _compare_json_value(
-            question.answer,
-            submitted_answer["answer"],
-        )
-        if mismatch_reason is not None:
-            raise BenchmarkValidationError(
-                _validation_error_message(
-                    question_id=question.id,
-                    reason=mismatch_reason,
-                    actual_answer=question.answer,
-                    submitted_answer=submitted_answer["answer"],
-                )
-            )
-
-    known_question_ids = {question.id for question in benchmark.questions}
-    for submitted_answer in submitted_answers:
-        question_id = str(submitted_answer["question_id"])
-        if question_id not in known_question_ids:
-            raise BenchmarkValidationError(
-                _validation_error_message(
-                    question_id=question_id,
-                    reason="unknown_question_id",
-                    actual_answer=_UNKNOWN_ANSWER,
-                    submitted_answer=submitted_answer["answer"],
-                )
-            )
-
-
 def _run_phase_timings(
     *,
     setup_duration_ns: int,
@@ -524,33 +494,6 @@ def _run_phase_timings(
     ]
 
 
-def _validation_error_message(
-    *,
-    question_id: str,
-    reason: str,
-    actual_answer: Any,
-    submitted_answer: Any,
-) -> str:
-    """Return a validation error message with answer values."""
-    return (
-        f"Benchmark answers failed validation: {question_id}: {reason}; "
-        f"submitted_answer={_format_answer_for_error(submitted_answer)}; "
-        f"actual_answer={_format_answer_for_error(actual_answer)}"
-    )
-
-
-def _format_answer_for_error(answer: Any) -> str:
-    """Return a compact representation of an answer for validation errors."""
-    if answer is _MISSING_ANSWER:
-        return "<missing>"
-    if answer is _UNKNOWN_ANSWER:
-        return "<unknown_question_id>"
-    try:
-        return json.dumps(_jsonable(answer), sort_keys=True)
-    except TypeError:
-        return repr(answer)
-
-
 def _memory_delta(peak_bytes: int | None, baseline_bytes: int | None) -> int | None:
     """Return a non-negative memory delta from a raw peak and baseline."""
     if peak_bytes is None or baseline_bytes is None:
@@ -558,50 +501,59 @@ def _memory_delta(peak_bytes: int | None, baseline_bytes: int | None) -> int | N
     return max(peak_bytes - baseline_bytes, 0)
 
 
-def _compare_json_value(
-    expected: neurodatabench.models.JsonValue,
-    actual: neurodatabench.models.JsonValue,
-) -> str | None:
-    """Return a mismatch reason for JSON-compatible values, or None when equal."""
-    if isinstance(expected, bool):
-        return None if actual is expected else "exact_bool"
-    if isinstance(expected, int) and not isinstance(expected, bool):
-        if (
-            isinstance(actual, int)
-            and not isinstance(actual, bool)
-            and actual == expected
-        ):
-            return None
-        return "exact_int"
-    if isinstance(expected, float):
-        if isinstance(actual, bool) or not isinstance(actual, (int, float)):
-            return "expected_float"
-        return None if bool(np.isclose(float(actual), expected)) else "float_close"
-    if isinstance(expected, str):
-        return None if actual == expected else "exact_str"
-    if expected is None:
-        return None if actual is None else "exact_null"
-    if isinstance(expected, list):
-        if not isinstance(actual, list):
-            return "expected_list"
-        if len(expected) != len(actual):
-            return "list_length_mismatch"
-        for index, (expected_item, actual_item) in enumerate(zip(expected, actual)):
-            mismatch_reason = _compare_json_value(expected_item, actual_item)
-            if mismatch_reason is not None:
-                return f"list_item_{index}_{mismatch_reason}"
+def _resolve_implementation_script_path(
+    configured_path: Path | None,
+    *,
+    setup: Callable[[neurodatabench.models.RunContext], None],
+    submit_answers: Callable[[neurodatabench.models.RunContext], None],
+) -> Path | None:
+    """Return the implementation script path to copy into result artifacts."""
+    if configured_path is not None:
+        path = configured_path.expanduser().resolve()
+        if not path.is_file():
+            raise ValueError(f"implementation_script does not exist: {path}")
+        logger.debug("Using configured implementation script path %s.", path)
+        return path
+
+    inferred_paths = [
+        path
+        for path in (
+            _callable_source_path(setup),
+            _callable_source_path(submit_answers),
+        )
+        if path is not None
+    ]
+    if not inferred_paths:
+        logger.debug("No implementation script path could be inferred.")
         return None
-    if isinstance(expected, dict):
-        if not isinstance(actual, dict):
-            return "expected_object"
-        if set(expected) != set(actual):
-            return "object_keys_mismatch"
-        for key in expected:
-            mismatch_reason = _compare_json_value(expected[key], actual[key])
-            if mismatch_reason is not None:
-                return f"object_value_{key}_{mismatch_reason}"
+
+    first_path = inferred_paths[0]
+    if any(path != first_path for path in inferred_paths):
+        logger.debug(
+            "Implementation hooks come from multiple files; using %s.",
+            first_path,
+        )
+    else:
+        logger.debug("Inferred implementation script path %s.", first_path)
+    return first_path
+
+
+def _callable_source_path(
+    callback: Callable[[neurodatabench.models.RunContext], None],
+) -> Path | None:
+    """Return the existing Python source path for a callback, if available."""
+    try:
+        source = inspect.getsourcefile(callback) or inspect.getfile(callback)
+    except TypeError:
+        logger.debug("Skipping callback without an inspectable source path.")
         return None
-    return "unsupported_expected_type"
+    if source.startswith("<"):
+        return None
+    path = Path(source).expanduser().resolve()
+    if not path.is_file():
+        logger.debug("Skipping missing callback source path %s.", path)
+        return None
+    return path
 
 
 def _run_metadata(
@@ -609,6 +561,7 @@ def _run_metadata(
     implementation: neurodatabench.models.Implementation,
     benchmark_source: str,
     benchmark: neurodatabench.models.Benchmark,
+    implementation_script_path: Path | None,
 ) -> neurodatabench.models.JsonObject:
     """Collect run metadata."""
     return {
@@ -639,6 +592,14 @@ def _run_metadata(
             "cwd": str(Path.cwd()),
             "argv": sys.argv,
         },
+        "implementation_script": (
+            None
+            if implementation_script_path is None
+            else {
+                "source": str(implementation_script_path),
+                "artifact": _IMPLEMENTATION_SCRIPT_ARTIFACT_NAME,
+            }
+        ),
         "requirements": _REQUIREMENTS_ARTIFACT_NAME,
     }
 
@@ -648,6 +609,7 @@ def _write_result_artifacts(
     out_dir: Path,
     raw_benchmark: neurodatabench.models.JsonObject,
     metadata: neurodatabench.models.JsonObject,
+    implementation_script_path: Path | None,
     timings: neurodatabench.models.RunTimings,
     validation: neurodatabench.models.JsonObject,
     profile_samples: list[neurodatabench.models.JsonObject],
@@ -663,6 +625,10 @@ def _write_result_artifacts(
     _write_json(out_dir / "validation.json", validation)
     _write_json(out_dir / "profile_summary.json", profile_summary)
     _write_jsonl(out_dir / "profile_samples.jsonl", profile_samples)
+    _copy_implementation_script(
+        source_path=implementation_script_path,
+        out_dir=out_dir,
+    )
     neurodatabench.plots._write_result_dashboard(
         out_dir=out_dir,
         metadata=metadata,
@@ -677,6 +643,23 @@ def _write_result_artifacts(
     )
     _write_bundle(out_dir)
     _update_results_leaderboard(out_dir)
+
+
+def _copy_implementation_script(source_path: Path | None, out_dir: Path) -> None:
+    """Copy the implementation script source into a result directory."""
+    if source_path is None:
+        logger.debug("Skipping implementation script artifact; no source path found.")
+        return
+    artifact_path = out_dir / _IMPLEMENTATION_SCRIPT_ARTIFACT_NAME
+    if source_path == artifact_path.resolve():
+        logger.debug("Skipping implementation script artifact copied onto itself.")
+        return
+    logger.debug(
+        "Copying implementation script from %s to %s.",
+        source_path,
+        artifact_path,
+    )
+    shutil.copy2(source_path, artifact_path)
 
 
 def _update_results_leaderboard(out_dir: Path) -> None:
