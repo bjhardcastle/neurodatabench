@@ -36,6 +36,31 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
             self.assertFalse(status_path.exists())
             self.assertFalse(status_path.parent.exists())
 
+    def test_timeout_flag_targets_runner_supervisor_not_helper(self) -> None:
+        """Matrix timeouts should wrap the uv command instead of helper main()."""
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "scripts/run_benchmark_matrix.py",
+                "--dry-run",
+                "--limit",
+                "1",
+                "--timeout-seconds",
+                "12",
+            ],
+            check=False,
+            cwd=Path(__file__).resolve().parents[1],
+            capture_output=True,
+            text=True,
+        )
+
+        output = completed.stdout + completed.stderr
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("neurodatabench.runner supervise", output)
+        self.assertIn("--timeout-seconds 12", output)
+        self.assertIn("-- uv run", output)
+        self.assertNotIn("uv run --timeout-seconds", output)
+
 
 if __name__ == "__main__":
     unittest.main()

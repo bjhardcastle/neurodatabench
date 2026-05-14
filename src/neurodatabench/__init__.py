@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import logging
+from typing import Any
 
 try:
     __version__ = importlib.metadata.version("neurodatabench")
@@ -25,7 +26,18 @@ from neurodatabench.models import (
     RunPhaseTiming,
     RunTimings,
 )
-from neurodatabench.runner import BenchmarkValidationError, main
+
+BenchmarkValidationError = validation.BenchmarkValidationError
+
+
+def __getattr__(name: str) -> Any:
+    """Lazily expose runner APIs without importing the runner during package init."""
+    if name == "main":
+        import neurodatabench.runner
+
+        return neurodatabench.runner.main
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "AnswerSubmissionTiming",

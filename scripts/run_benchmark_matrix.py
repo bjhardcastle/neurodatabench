@@ -120,8 +120,16 @@ def _parse_args() -> argparse.Namespace:
         help="Path for per-run status records.",
     )
     parser.add_argument("--profile-interval-ms", type=int, help="Forwarded runner profile interval.")
-    parser.add_argument("--timeout-seconds", type=float, help="Forwarded runner timeout override.")
-    parser.add_argument("--no-timeout", action="store_true", help="Forwarded runner timeout disable flag.")
+    parser.add_argument(
+        "--timeout-seconds",
+        type=float,
+        help="Supervisor timeout override for each matrix subprocess.",
+    )
+    parser.add_argument(
+        "--no-timeout",
+        action="store_true",
+        help="Disable supervisor timeout enforcement.",
+    )
     parser.add_argument("--log-level", default="INFO", help="Log level for this matrix script and helpers.")
     return parser.parse_args()
 
@@ -218,14 +226,31 @@ def _selected_runs(runs: list[MatrixRun], *, only: list[str], skip: list[str]) -
 
 
 def _command_for(run: MatrixRun, args: argparse.Namespace) -> list[str]:
-    """Build the uv command for a matrix run."""
-    command = ["uv", "run", *run.extra_uv_args, run.helper, "--log-level", args.log_level]
+    """Build the supervised uv command for a matrix run."""
+    child_command = [
+        "uv",
+        "run",
+        *run.extra_uv_args,
+        run.helper,
+        "--log-level",
+        args.log_level,
+    ]
     if args.profile_interval_ms is not None:
-        command.extend(["--profile-interval-ms", str(args.profile_interval_ms)])
+        child_command.extend(["--profile-interval-ms", str(args.profile_interval_ms)])
+    command = [
+        sys.executable,
+        "-m",
+        "neurodatabench.runner",
+        "supervise",
+        "--benchmark",
+        run.benchmark,
+    ]
     if args.timeout_seconds is not None:
         command.extend(["--timeout-seconds", str(args.timeout_seconds)])
     if args.no_timeout:
-        command.append("--disable-timeout")
+        command.append("--no-timeout")
+    command.append("--")
+    command.extend(child_command)
     return command
 
 

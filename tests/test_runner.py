@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import tempfile
 import time
 import unittest
@@ -521,230 +522,150 @@ class RunnerTests(unittest.TestCase):
         self.assertFalse(call_config.fail_fast)
         self.assertTrue(cli_config.fail_fast)
 
-    def test_timeout_config_resolves_from_call_cli_environment_and_no_timeout(
+    def test_supervised_timeout_resolves_from_benchmark_override_and_disable(
         self,
     ) -> None:
-        """Timeout settings should support overrides and explicit disabling."""
-        with unittest.mock.patch.dict(
-            os.environ,
-            {"NDB_TIMEOUT_SECONDS": "30", "NDB_NO_TIMEOUT": "false"},
+        """Process supervisor timeouts should resolve outside in-process runs."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            benchmark_path = Path(tmpdir) / "timeout.json"
+            benchmark_path.write_text(
+                json.dumps(
+                    _benchmark_json(
+                        "timeout-config",
+                        [{"id": "q", "text": "Q", "answer": 1}],
+                        timeout_seconds=120,
+                    )
+                ),
+                encoding="utf-8",
+            )
+
+            self.assertEqual(
+                neurodatabench.runner._supervised_timeout_seconds(
+                    benchmark=str(benchmark_path),
+                    timeout_seconds=None,
+                    no_timeout=False,
+                ),
+                120,
+            )
+            self.assertEqual(
+                neurodatabench.runner._supervised_timeout_seconds(
+                    benchmark=str(benchmark_path),
+                    timeout_seconds=45,
+                    no_timeout=False,
+                ),
+                45,
+            )
+            self.assertIsNone(
+                neurodatabench.runner._supervised_timeout_seconds(
+                    benchmark=str(benchmark_path),
+                    timeout_seconds=45,
+                    no_timeout=True,
+                )
+            )
+
+    def test_supervised_timeout_reports_actual_elapsed_seconds(self) -> None:
+        """Timeout message should report actual elapsed supervisor duration."""
+        class FakeProcess:
+            """Subprocess test double that times out once, then exits after kill."""
+
+            def __init__(self) -> None:
+                """Create an un-killed fake process."""
+                self.killed = False
+                self.pid = 123
+                self.wait_calls = 0
+
+            def wait(self, timeout: float | None = None) -> int:
+                """Raise a timeout on the first wait and return after kill."""
+                self.wait_calls += 1
+                if self.wait_calls == 1:
+                    raise subprocess.TimeoutExpired(["fake"], timeout)
+                return -9
+
+            def kill(self) -> None:
+                """Record that the process was killed."""
+                self.killed = True
+
+        process = FakeProcess()
+        with self.assertLogs("neurodatabench.runner", level="ERROR"):
+            with unittest.mock.patch.object(
+                neurodatabench.runner.subprocess,
+                "Popen",
+                return_value=process,
+            ):
+                with unittest.mock.patch.object(
+                    neurodatabench.runner,
+                    "_kill_process_tree",
+                ) as kill_process_tree:
+                    with unittest.mock.patch.object(
+                        neurodatabench.runner.time,
+                        "monotonic",
+                        side_effect=[100.0, 112.345],
+                    ):
+                        with self.assertRaises(SystemExit) as error:
+                            neurodatabench.runner._run_supervised_command(
+                                ["fake"],
+                                timeout_seconds=10.0,
+                            )
+
+        kill_process_tree.assert_called_once_with(process)
+        self.assertEqual(str(error.exception), "Benchmark timed out at 12.345 seconds")
+
+    def test_supervised_timeout_kills_process_tree(self) -> None:
+        """Timeout cleanup should kill the uv process and descendants."""
+        class FakePsutilProcess:
+            """psutil.Process test double with recursive children."""
+
+            def __init__(
+                self,
+                pid: int,
+                children: list["FakePsutilProcess"] | None = None,
+            ) -> None:
+                """Create a fake process tree node."""
+                self.pid = pid
+                self.killed = False
+                self._children = children or []
+
+            def children(self, *, recursive: bool) -> list["FakePsutilProcess"]:
+                """Return fake child processes."""
+                return self._children
+
+            def kill(self) -> None:
+                """Record that the fake process was killed."""
+                self.killed = True
+
+        class FakePopen:
+            """Popen test double exposing pid and wait."""
+
+            pid = 1
+
+            def __init__(self) -> None:
+                """Create a fake Popen process."""
+                self.waited = False
+
+            def wait(self, timeout: float | None = None) -> int:
+                """Record that the immediate subprocess was waited on."""
+                self.waited = True
+                return -9
+
+        child = FakePsutilProcess(2)
+        parent = FakePsutilProcess(1, [child])
+        popen = FakePopen()
+        with unittest.mock.patch.object(
+            neurodatabench.runner.psutil,
+            "Process",
+            return_value=parent,
         ):
-            env_config = neurodatabench.runner._resolve_config(
-                default_benchmark="dynamic_routing_zarr_v0",
-                default_out=None,
-                default_log_level=None,
-                implementation_id="test-implementation",
-                argv=(),
-            )
-            call_config = neurodatabench.runner._resolve_config(
-                default_benchmark="dynamic_routing_zarr_v0",
-                default_out=None,
-                default_log_level=None,
-                default_timeout_seconds=45,
-                implementation_id="test-implementation",
-                argv=(),
-            )
-            cli_config = neurodatabench.runner._resolve_config(
-                default_benchmark="dynamic_routing_zarr_v0",
-                default_out=None,
-                default_log_level=None,
-                default_timeout_seconds=45,
-                implementation_id="test-implementation",
-                argv=("--timeout-seconds", "60"),
-            )
-            disabled_config = neurodatabench.runner._resolve_config(
-                default_benchmark="dynamic_routing_zarr_v0",
-                default_out=None,
-                default_log_level=None,
-                default_timeout_seconds=45,
-                default_no_timeout=True,
-                implementation_id="test-implementation",
-                argv=(),
-            )
-            cli_disabled_config = neurodatabench.runner._resolve_config(
-                default_benchmark="dynamic_routing_zarr_v0",
-                default_out=None,
-                default_log_level=None,
-                implementation_id="test-implementation",
-                argv=("--no-timeout",),
-            )
+            with unittest.mock.patch.object(
+                neurodatabench.runner.psutil,
+                "wait_procs",
+                return_value=([], []),
+            ) as wait_procs:
+                neurodatabench.runner._kill_process_tree(popen)
 
-        benchmark = neurodatabench.models.Benchmark.model_validate(
-            _benchmark_json(
-                "timeout-config",
-                [{"id": "q", "text": "Q", "answer": 1}],
-                timeout_seconds=120,
-            )
-        )
-        self.assertEqual(env_config.timeout_seconds, 30)
-        self.assertEqual(call_config.timeout_seconds, 45)
-        self.assertEqual(cli_config.timeout_seconds, 60)
-        self.assertFalse(env_config.disable_timeout)
-        self.assertTrue(cli_disabled_config.disable_timeout)
-        self.assertEqual(
-            neurodatabench.runner._effective_timeout_seconds(
-                config=disabled_config,
-                benchmark=benchmark,
-            ),
-            None,
-        )
-
-    def test_timed_out_run_writes_result_artifacts(self) -> None:
-        """A timed-out run should write inspectable artifacts and exit cleanly."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            benchmark_path = Path(tmpdir) / "timeout.json"
-            benchmark_path.write_text(
-                json.dumps(
-                    _benchmark_json(
-                        "timeout",
-                        [{"id": "q", "text": "Q", "answer": 1}],
-                        timeout_seconds=0.01,
-                    )
-                ),
-                encoding="utf-8",
-            )
-            results_dir = Path(tmpdir) / "results"
-            out_dir = results_dir / "timeout_run"
-
-            def setup(context: neurodatabench.models.RunContext) -> None:
-                """Sleep longer than the benchmark timeout."""
-                time.sleep(0.05)
-
-            def submit_answers(context: neurodatabench.models.RunContext) -> None:
-                """This should not run after setup times out."""
-                context.submit_answer("q", 1)
-
-            with self.assertRaises(SystemExit) as error:
-                neurodatabench.runner.main(
-                    implementation_id="test-implementation",
-                    implementation_local_cache=None,
-                    implementation_remote_cache=False,
-                    benchmark=benchmark_path,
-                    out=out_dir,
-                    setup=setup,
-                    submit_answers=submit_answers,
-                    argv=(),
-                )
-
-            self.assertEqual(
-                str(error.exception),
-                "Benchmark timed out at 0.01 seconds",
-            )
-            self.assertTrue((out_dir / "run_metadata.json").exists())
-            self.assertTrue((out_dir / "validation.json").exists())
-            self.assertTrue((out_dir / "results_bundle.zip").exists())
-            metadata = _read_json(out_dir / "run_metadata.json")
-            validation = _read_json(out_dir / "validation.json")
-            timings = _read_json(out_dir / "timings.json")
-            self.assertEqual(metadata["timeout_seconds"], 0.01)
-            self.assertTrue(metadata["timed_out"])
-            self.assertFalse(validation["correct"])
-            self.assertTrue(validation["timed_out"])
-            self.assertGreater(timings["total_duration_ns"], 0)
-            leaderboard = json.loads(
-                (results_dir / "leaderboard.json").read_text(encoding="utf-8")
-            )
-            self.assertIsInstance(leaderboard, list)
-            self.assertEqual(len(leaderboard), 1)
-            self.assertTrue(leaderboard[0]["timed_out"])
-            self.assertEqual(leaderboard[0]["run_status"], "timed out")
-            self.assertEqual(leaderboard[0]["timeout_seconds"], 0.01)
-            self.assertEqual(leaderboard[0]["result_dir"], "timeout_run")
-            self.assertTrue((results_dir / "leaderboard.html").exists())
-
-    def test_timeout_is_not_caught_by_implementation_exception_handlers(self) -> None:
-        """Timeout enforcement should still write results through broad catches."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            benchmark_path = Path(tmpdir) / "timeout.json"
-            benchmark_path.write_text(
-                json.dumps(
-                    _benchmark_json(
-                        "timeout",
-                        [{"id": "q", "text": "Q", "answer": 1}],
-                    )
-                ),
-                encoding="utf-8",
-            )
-            results_dir = Path(tmpdir) / "results"
-            out_dir = results_dir / "timeout_run"
-
-            def setup(context: neurodatabench.models.RunContext) -> None:
-                """No setup is needed for this timeout probe."""
-
-            def submit_answers(context: neurodatabench.models.RunContext) -> None:
-                """Simulate dependency code that catches ordinary exceptions."""
-                while True:
-                    try:
-                        time.sleep(0.05)
-                    except Exception as error:
-                        raise RuntimeError("implementation swallowed timeout") from error
-
-            with self.assertRaises(SystemExit) as error:
-                neurodatabench.runner.main(
-                    implementation_id="test-implementation",
-                    implementation_local_cache=None,
-                    implementation_remote_cache=False,
-                    benchmark=benchmark_path,
-                    out=out_dir,
-                    setup=setup,
-                    submit_answers=submit_answers,
-                    timeout_seconds=0.01,
-                    argv=(),
-                )
-
-            self.assertEqual(
-                str(error.exception),
-                "Benchmark timed out at 0.01 seconds",
-            )
-            validation = _read_json(out_dir / "validation.json")
-            self.assertTrue(validation["timed_out"])
-            leaderboard = json.loads(
-                (results_dir / "leaderboard.json").read_text(encoding="utf-8")
-            )
-            self.assertEqual(leaderboard[0]["run_status"], "timed out")
-
-    def test_no_timeout_disables_benchmark_timeout(self) -> None:
-        """The runner should allow explicit no-timeout runs."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            benchmark_path = Path(tmpdir) / "no-timeout.json"
-            benchmark_path.write_text(
-                json.dumps(
-                    _benchmark_json(
-                        "no-timeout",
-                        [{"id": "q", "text": "Q", "answer": 1}],
-                        timeout_seconds=0.01,
-                    )
-                ),
-                encoding="utf-8",
-            )
-            out_dir = Path(tmpdir) / "results"
-
-            def setup(context: neurodatabench.models.RunContext) -> None:
-                """Sleep longer than the benchmark timeout."""
-                time.sleep(0.02)
-
-            def submit_answers(context: neurodatabench.models.RunContext) -> None:
-                """Submit the expected answer."""
-                context.submit_answer("q", 1)
-
-            neurodatabench.runner.main(
-                implementation_id="test-implementation",
-                implementation_local_cache=None,
-                implementation_remote_cache=False,
-                benchmark=benchmark_path,
-                out=out_dir,
-                setup=setup,
-                submit_answers=submit_answers,
-                no_timeout=True,
-                argv=(),
-            )
-
-            metadata = _read_json(out_dir / "run_metadata.json")
-            validation = _read_json(out_dir / "validation.json")
-            self.assertNotIn("timeout_seconds", metadata)
-            self.assertNotIn("timed_out", metadata)
-            self.assertTrue(validation["correct"])
-            self.assertNotIn("timed_out", validation)
+        self.assertTrue(child.killed)
+        self.assertTrue(parent.killed)
+        self.assertTrue(popen.waited)
+        wait_procs.assert_called_once_with([child, parent], timeout=5.0)
 
     def test_invalid_log_level_raises(self) -> None:
         """Invalid log levels should fail during settings validation."""
