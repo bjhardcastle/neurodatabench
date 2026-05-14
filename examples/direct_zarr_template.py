@@ -98,16 +98,30 @@ def _open_store(nwb_path: str) -> Any:
     backend = _backend()
     logger.debug("Opening NWB Zarr store %s through %s.", nwb_path, backend)
     if backend == "s3fs":
+        if _is_zarr_v3():
+            return zarr.open_group(
+                nwb_path,
+                mode="r",
+                storage_options={"anon": True},
+                use_consolidated=False,
+            )
         return zarr.open(nwb_path, mode="r", storage_options={"anon": True})
     if backend == "obstore":
         from obstore import fsspec as obstore_fsspec
 
         os.environ.setdefault("AWS_SKIP_SIGNATURE", "true")
         obstore_fsspec.register("s3")
+        if _is_zarr_v3():
+            return zarr.open_group(nwb_path, mode="r", use_consolidated=False)
         return zarr.open(nwb_path, mode="r")
     if backend in {"remfile", "ros"}:
         raise RuntimeError(f"{backend} is a file backend and cannot open directory Zarr stores.")
     raise ValueError(f"Unsupported direct Zarr backend: {backend}")
+
+
+def _is_zarr_v3() -> bool:
+    """Return whether the active zarr-python runtime is major version 3."""
+    return zarr.__version__.split(".", maxsplit=1)[0] == "3"
 
 
 def _split_s3_uri(nwb_path: str) -> tuple[str, str]:

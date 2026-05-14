@@ -1533,3 +1533,7 @@ key_package_versions
 * [ ] Runner rejects runs where both CLI `--questions` and `main(questions=...)` are supplied.
 * [ ] Runner rejects runs where both CLI `--out` and `main(out=...)` are supplied.
 * [ ] Smoke tests can run locally with packaged question names.
+
+## Current Findings
+
+* `scripts/run_benchmark_matrix.py --only direct-zarr-v3-s3fs` selects the direct Zarr v3 row correctly and runs `uv run --with zarr>=3,<4 examples/direct_zarr_template.py`. Direct Zarr v3 access uses `zarr.open_group(..., use_consolidated=False)` because plain `zarr.open(...)` eagerly parses consolidated metadata for the public v2 Zarr stores. The hierarchy includes legacy Zarr v2 object/bytes array metadata such as `session_start_time/.zarray` with `dtype: "|O"`, a `vlen-bytes` filter, and `fill_value: 0`; zarr 3.2.1 rejects that with `TypeError: Invalid type: 0. Expected a string.` This is not NWB-specific: any Zarr v2 store with that object-dtype plus variable-length bytes codec metadata can hit the same zarr-python v3 parser failure. The benchmark's needed arrays are readable under zarr 3.2.1 when consolidated metadata is bypassed. Verified `direct-zarr-v3-s3fs` succeeds in about 19 seconds and `direct-zarr-v3-obstore` succeeds in about 16 seconds with `scripts/run_benchmark_matrix.py --only ... --timeout-seconds 90`; a generic read-only Store shim could normalize legacy metadata when full-hierarchy traversal or bytes arrays are needed.
