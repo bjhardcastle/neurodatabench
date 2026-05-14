@@ -39,7 +39,7 @@ _REQUIREMENTS_ARTIFACT_NAME = "requirements.txt"
 BenchmarkValidationError = neurodatabench.validation.BenchmarkValidationError
 
 
-class _RunTimeoutError(TimeoutError):
+class _RunTimeoutError(BaseException):
     """Raised when the benchmark run exceeds its effective timeout."""
 
 

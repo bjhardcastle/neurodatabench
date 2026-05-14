@@ -240,9 +240,11 @@ def _leaderboard_plot_rows(
     plot_rows: list[neurodatabench.models.JsonObject] = []
     for row in rows:
         plot_row = dict(row)
-        total_seconds = _json_number_at(row, ("total_seconds",)) or 0.0
+        total_seconds = _leaderboard_number_at(row, "total_seconds") or 0.0
         is_truncated = total_seconds > _LEADERBOARD_PLOT_MAX_SECONDS
-        timed_out = row.get("timed_out") is True
+        timed_out = _leaderboard_timed_out(row)
+        timeout_seconds = _leaderboard_number_at(row, "timeout_seconds")
+        plot_row["total_seconds"] = total_seconds
         plot_row["plot_total_seconds"] = min(
             total_seconds,
             _LEADERBOARD_PLOT_MAX_SECONDS,
@@ -254,6 +256,8 @@ def _leaderboard_plot_rows(
         plot_row["timed_out_label"] = "timed out" if timed_out else ""
         if not timed_out:
             plot_row.pop("timeout_seconds", None)
+        elif timeout_seconds is not None:
+            plot_row["timeout_seconds"] = timeout_seconds
         plot_row["total_seconds_truncated"] = is_truncated
         plot_row["plot_total_seconds_label"] = (
             f"{total_seconds:,.1f} s" if is_truncated else ""
@@ -263,12 +267,44 @@ def _leaderboard_plot_rows(
         plot_rows,
         key=lambda row: (
             str(row.get("benchmark_id", "")),
-            _json_number_at(row, ("total_seconds",)) or 0.0,
+            _leaderboard_number_at(row, "total_seconds") or 0.0,
             str(row.get("implementation_id", "")),
             str(row.get("datetime_utc", "")),
             str(row.get("result_dir", "")),
         ),
     )
+
+
+def _leaderboard_timed_out(row: neurodatabench.models.JsonObject) -> bool:
+    """Return whether a leaderboard row represents a timed-out run."""
+    timed_out = row.get("timed_out")
+    if isinstance(timed_out, bool):
+        return timed_out
+    if isinstance(timed_out, str):
+        return timed_out.strip().lower() == "true"
+    run_status = row.get("run_status")
+    return isinstance(run_status, str) and run_status.strip().lower() == "timed out"
+
+
+def _leaderboard_number_at(
+    row: neurodatabench.models.JsonObject,
+    key: str,
+) -> float | None:
+    """Return a leaderboard number from JSON-native or CSV-like row data."""
+    value = row.get(key)
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        stripped_value = value.strip()
+        if not stripped_value:
+            return None
+        try:
+            return float(stripped_value)
+        except ValueError:
+            return None
+    return None
 
 
 def _result_dashboard_chart(

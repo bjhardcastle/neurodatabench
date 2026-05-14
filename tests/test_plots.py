@@ -55,6 +55,30 @@ class PlotTests(unittest.TestCase):
         self.assertEqual(plot_rows[2]["timed_out_label"], "timed out")
         self.assertEqual(plot_rows[2]["timeout_seconds"], 60.0)
 
+    def test_leaderboard_plot_rows_include_csv_like_timeouts(self) -> None:
+        """Leaderboard plot rows should coerce CSV-like timeout row values."""
+        rows = [
+            {
+                "implementation_id": "timeout",
+                "nwb_interface": "pynwb",
+                "object_store_backend": "remfile",
+                "benchmark_id": "benchmark",
+                "leaderboard_label": "timeout",
+                "timed_out": "True",
+                "run_status": "timed out",
+                "total_seconds": "60.0",
+                "timeout_seconds": "60.0",
+            }
+        ]
+
+        plot_rows = neurodatabench.plots._leaderboard_plot_rows(rows)
+
+        self.assertEqual(plot_rows[0]["plot_total_seconds"], 20.0)
+        self.assertEqual(plot_rows[0]["total_seconds"], 60.0)
+        self.assertTrue(plot_rows[0]["timed_out"])
+        self.assertEqual(plot_rows[0]["timed_out_label"], "timed out")
+        self.assertEqual(plot_rows[0]["timeout_seconds"], 60.0)
+
     def test_leaderboard_plot_rows_sort_by_time_within_benchmark(self) -> None:
         """Leaderboard plot rows should keep benchmark groups sorted by runtime."""
         rows = [

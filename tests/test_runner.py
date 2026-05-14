@@ -652,6 +652,57 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(leaderboard[0]["result_dir"], "timeout_run")
             self.assertTrue((results_dir / "leaderboard.html").exists())
 
+    def test_timeout_is_not_caught_by_implementation_exception_handlers(self) -> None:
+        """Timeout enforcement should still write results through broad catches."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            benchmark_path = Path(tmpdir) / "timeout.json"
+            benchmark_path.write_text(
+                json.dumps(
+                    _benchmark_json(
+                        "timeout",
+                        [{"id": "q", "text": "Q", "answer": 1}],
+                    )
+                ),
+                encoding="utf-8",
+            )
+            results_dir = Path(tmpdir) / "results"
+            out_dir = results_dir / "timeout_run"
+
+            def setup(context: neurodatabench.models.RunContext) -> None:
+                """No setup is needed for this timeout probe."""
+
+            def submit_answers(context: neurodatabench.models.RunContext) -> None:
+                """Simulate dependency code that catches ordinary exceptions."""
+                while True:
+                    try:
+                        time.sleep(0.05)
+                    except Exception as error:
+                        raise RuntimeError("implementation swallowed timeout") from error
+
+            with self.assertRaises(SystemExit) as error:
+                neurodatabench.runner.main(
+                    implementation_id="test-implementation",
+                    implementation_local_cache=None,
+                    implementation_remote_cache=False,
+                    benchmark=benchmark_path,
+                    out=out_dir,
+                    setup=setup,
+                    submit_answers=submit_answers,
+                    timeout_seconds=0.01,
+                    argv=(),
+                )
+
+            self.assertEqual(
+                str(error.exception),
+                "Benchmark timed out at 0.01 seconds",
+            )
+            validation = _read_json(out_dir / "validation.json")
+            self.assertTrue(validation["timed_out"])
+            leaderboard = json.loads(
+                (results_dir / "leaderboard.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(leaderboard[0]["run_status"], "timed out")
+
     def test_no_timeout_disables_benchmark_timeout(self) -> None:
         """The runner should allow explicit no-timeout runs."""
         with tempfile.TemporaryDirectory() as tmpdir:
