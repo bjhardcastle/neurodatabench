@@ -51,7 +51,7 @@ def main() -> int:
         return 0
 
     status_path = args.status_jsonl
-    if status_path is not None:
+    if status_path is not None and not args.dry_run:
         status_path.parent.mkdir(parents=True, exist_ok=True)
 
     failures = 0
@@ -74,7 +74,7 @@ def main() -> int:
                 "returncode": completed.returncode,
                 "elapsed_seconds": time.monotonic() - started,
             }
-        _write_status(status_path, run, command, result)
+            _write_status(status_path, run, command, result)
         if result["returncode"] != 0:
             failures += 1
             logger.error("Failed %s with exit code %s.", run.label, result["returncode"])
