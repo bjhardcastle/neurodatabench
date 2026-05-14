@@ -116,21 +116,17 @@ def _open_nwb(nwb_path: str) -> Iterator[h5py.File]:
         with h5py.File(_to_https_url(nwb_path).encode(), mode="r", driver="ros3") as nwb_file:
             yield nwb_file
     elif backend == "obstore":
-        import obstore
-        from obstore.store import S3Store
+        from obstore import fsspec as obstore_fsspec
 
         bucket, key = _split_s3_uri(nwb_path)
-        store = S3Store(
-            bucket=bucket,
+        fs = obstore_fsspec.FsspecStore(
+            "s3",
             config={"region": os.environ.get("AWS_REGION", "us-west-2")},
             skip_signature=True,
         )
-        file_obj = obstore.open_reader(store, key)
-        try:
+        with fs.open(f"{bucket}/{key}", mode="rb") as file_obj:
             with h5py.File(file_obj, mode="r") as nwb_file:
                 yield nwb_file
-        finally:
-            file_obj.close()
     else:
         raise ValueError(f"Unsupported direct h5py backend: {backend}")
 

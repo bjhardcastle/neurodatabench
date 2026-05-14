@@ -30,6 +30,7 @@
 * The dynamic routing HDF5 and Zarr packaged benchmarks currently use a 90-second fair-run timeout while matrix failures are being separated into slow scanning, file-opening timeout, and backend compatibility categories.
 * With the 90-second timeout, the lazynwb pre-1.0 HDF5 remfile and s3fs matrix rows complete, while the obstore row still times out. Debug logs show obstore is not stuck before opening: it spends tens of seconds retrieving `/units` and `/intervals/trials` accessors in setup, then times out during the first answer collection.
 * Lazynwb 0.2.90 Zarr failures appear to be anonymous S3 configuration loss, not fundamental lack of Zarr support. `lazynwb.file_io._open_file()` builds a `UPath` with resolved storage options, but the Zarr fallback calls `zarr.open(u.as_posix(), mode="r")`, dropping those options; debug logs then show signed `s3fs` `HeadObject` requests failing with `Unable to locate credentials`.
+* `examples/direct_h5py_template.py` should open HDF5 over obstore through `obstore.fsspec.FsspecStore`, not `obstore.open_reader()`. `open_reader().read()` returns `obstore.Bytes`, which h5py rejects; the fsspec bridge returns built-in `bytes` and the direct h5py obstore row validated in about 56 seconds.
 * Lazynwb 1.0/dev matrix runs must not receive `LAZYNWB_USE_OBSTORE` or `LAZYNWB_USE_REMFILE`; 1.0 implicitly uses obstore, and forcing those environment settings made HDF5 runs jump from about 5-6 seconds to about 13-15 seconds. Keep those backend-toggle env vars scoped to `examples/lazynwb_v0.py`.
 
 
