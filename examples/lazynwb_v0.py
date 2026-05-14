@@ -2,7 +2,7 @@
 # requires-python = ">=3.10"
 # dependencies = [
 #   "altair",
-#   "lazynwb==0.2.90",
+#   "lazynwb==0.2.91",
 #   "numpy",
 #   "polars==1.38.1",
 #   "psutil",
