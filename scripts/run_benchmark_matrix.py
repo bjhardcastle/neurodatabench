@@ -11,6 +11,7 @@ import subprocess
 import sys
 import time
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
@@ -43,6 +44,7 @@ def main() -> int:
     """Run matrix entries selected by command-line filters."""
     args = _parse_args()
     _configure_logging(args.log_level)
+    output_root = _output_root(args)
     runs = _selected_runs(_matrix(), only=args.only, skip=args.skip)
     if args.limit is not None:
         runs = runs[: args.limit]
@@ -50,7 +52,7 @@ def main() -> int:
         logger.info("No matrix runs selected.")
         return 0
 
-    status_path = args.status_jsonl
+    status_path = _status_path(args, output_root=output_root)
     if status_path is not None and not args.dry_run:
         status_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -58,7 +60,7 @@ def main() -> int:
     logger.info("Starting %d matrix run(s).", len(runs))
     for index, run in enumerate(runs, start=1):
         logger.info("Starting %d/%d: %s", index, len(runs), run.label)
-        command = _command_for(run, args)
+        command = _command_for(run, args, output_root=output_root)
         started = time.monotonic()
         if args.dry_run:
             logger.info("DRY RUN: %s", " ".join(command))
@@ -67,7 +69,7 @@ def main() -> int:
             completed = subprocess.run(
                 command,
                 cwd=_REPO_ROOT,
-                env=_environment_for(run),
+                env=_environment_for(run, output_root=output_root),
                 check=False,
             )
             result = {
@@ -114,10 +116,17 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--limit", type=int, help="Run only the first N selected entries.")
     parser.add_argument(
+        "--out",
+        type=Path,
+        help=(
+            "Root directory for per-run result directories and matrix-managed "
+            "artifacts such as status JSONL and lazynwb caches."
+        ),
+    )
+    parser.add_argument(
         "--status-jsonl",
         type=Path,
-        default=Path("results/matrix_status.jsonl"),
-        help="Path for per-run status records.",
+        help="Path for per-run status records. Defaults to <out>/matrix_status.jsonl.",
     )
     parser.add_argument("--profile-interval-ms", type=int, help="Forwarded runner profile interval.")
     parser.add_argument(
@@ -132,6 +141,20 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--log-level", default="INFO", help="Log level for this matrix script and helpers.")
     return parser.parse_args()
+
+
+def _output_root(args: argparse.Namespace) -> Path:
+    """Return the matrix storage root."""
+    if args.out is not None:
+        return args.out
+    return Path("results")
+
+
+def _status_path(args: argparse.Namespace, *, output_root: Path) -> Path | None:
+    """Return the JSON Lines status path for matrix runs."""
+    if args.status_jsonl is not None:
+        return args.status_jsonl
+    return output_root / "matrix_status.jsonl"
 
 
 def _configure_logging(log_level: str) -> None:
@@ -200,6 +223,21 @@ def _matrix() -> list[MatrixRun]:
                 )
             )
 
+    for backend in ("s3fs", "obstore"):
+        runs.append(
+            MatrixRun(
+                label=f"pynwb-zarr-v2-{backend}",
+                helper="examples/pynwb_zarr_template.py",
+                benchmark=_BENCHMARKS_BY_FORMAT["zarr"],
+                implementation_id=f"pynwb_hdmf_zarr_direct_{backend}",
+                object_store_backend=backend,
+                nwb_format="zarr",
+                local_cache="cold",
+                zarr_major_version="2",
+                extra_uv_args=("--with", "zarr<3"),
+            )
+        )
+
     for backend in _REMOTE_BACKENDS:
         runs.append(
             MatrixRun(
@@ -225,7 +263,12 @@ def _selected_runs(runs: list[MatrixRun], *, only: list[str], skip: list[str]) -
     return selected
 
 
-def _command_for(run: MatrixRun, args: argparse.Namespace) -> list[str]:
+def _command_for(
+    run: MatrixRun,
+    args: argparse.Namespace,
+    *,
+    output_root: Path,
+) -> list[str]:
     """Build the supervised uv command for a matrix run."""
     child_command = [
         "uv",
@@ -237,6 +280,8 @@ def _command_for(run: MatrixRun, args: argparse.Namespace) -> list[str]:
     ]
     if args.profile_interval_ms is not None:
         child_command.extend(["--profile-interval-ms", str(args.profile_interval_ms)])
+    if args.out is not None:
+        child_command.extend(["--out", str(_run_output_dir(run, output_root))])
     command = [
         sys.executable,
         "-m",
@@ -254,7 +299,13 @@ def _command_for(run: MatrixRun, args: argparse.Namespace) -> list[str]:
     return command
 
 
-def _environment_for(run: MatrixRun) -> dict[str, str]:
+def _run_output_dir(run: MatrixRun, output_root: Path) -> Path:
+    """Return the concrete output directory for one matrix run."""
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return output_root / f"{run.implementation_id}_{run.benchmark}_{timestamp}"
+
+
+def _environment_for(run: MatrixRun, *, output_root: Path) -> dict[str, str]:
     """Build the process environment for a matrix helper."""
     env = os.environ.copy()
     env["AWS_REGION"] = env.get("AWS_REGION", "us-west-2")
@@ -265,7 +316,7 @@ def _environment_for(run: MatrixRun) -> dict[str, str]:
         env["NDB_LOCAL_CACHE"] = run.local_cache
     if run.helper in {"examples/lazynwb_v0.py", "examples/lazynwb_v1dev.py"}:
         cache_name = f"{run.implementation_id.removesuffix('_cold').removesuffix('_warm')}.sqlite"
-        env["NDB_LAZYNWB_CACHE_PATH"] = str(_REPO_ROOT / "results" / "matrix_caches" / cache_name)
+        env["NDB_LAZYNWB_CACHE_PATH"] = str(output_root / "matrix_caches" / cache_name)
     if run.zarr_major_version is not None:
         env["NDB_ZARR_MAJOR_VERSION"] = run.zarr_major_version
     if run.helper == "examples/lazynwb_v0.py":
