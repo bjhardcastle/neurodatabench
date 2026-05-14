@@ -93,10 +93,10 @@ class RunnerTests(unittest.TestCase):
 
             validation = _read_json(out_dir / "validation.json")
             self.assertTrue(validation["correct"])
-            self.assertFalse(validation["timed_out"])
+            self.assertNotIn("timed_out", validation)
             metadata = _read_json(out_dir / "run_metadata.json")
-            self.assertEqual(metadata["timeout_seconds"], 60)
-            self.assertFalse(metadata["timed_out"])
+            self.assertNotIn("timeout_seconds", metadata)
+            self.assertNotIn("timed_out", metadata)
             self.assertEqual(metadata["implementation"]["id"], "test-implementation")
             self.assertEqual(metadata["implementation"]["nwb_interface"], "pynwb")
             self.assertEqual(
@@ -365,13 +365,21 @@ class RunnerTests(unittest.TestCase):
                 [row["object_store_backend"] for row in leaderboard],
                 ["s3fs", "remfile"],
             )
-            self.assertEqual([row["rank"] for row in leaderboard], [1, 2])
+            self.assertTrue(all("rank" not in row for row in leaderboard))
+            self.assertTrue(all("timed_out" not in row for row in leaderboard))
+            self.assertTrue(all("timeout_seconds" not in row for row in leaderboard))
             self.assertTrue((results_dir / "leaderboard.csv").exists())
             self.assertTrue((results_dir / "leaderboard.html").exists())
+            leaderboard_csv = (results_dir / "leaderboard.csv").read_text(
+                encoding="utf-8"
+            )
             self.assertIn(
                 "implementation_id,nwb_interface,object_store_backend,benchmark_id",
-                (results_dir / "leaderboard.csv").read_text(encoding="utf-8"),
+                leaderboard_csv,
             )
+            self.assertNotIn("rank", leaderboard_csv.splitlines()[0])
+            self.assertNotIn("timed_out", leaderboard_csv.splitlines()[0])
+            self.assertNotIn("timeout_seconds", leaderboard_csv.splitlines()[0])
             self.assertTrue(
                 all("peak_rss_delta_mib" in row for row in leaderboard)
             )
@@ -640,6 +648,7 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(len(leaderboard), 1)
             self.assertTrue(leaderboard[0]["timed_out"])
             self.assertEqual(leaderboard[0]["run_status"], "timed out")
+            self.assertEqual(leaderboard[0]["timeout_seconds"], 0.01)
             self.assertEqual(leaderboard[0]["result_dir"], "timeout_run")
             self.assertTrue((results_dir / "leaderboard.html").exists())
 
@@ -681,10 +690,10 @@ class RunnerTests(unittest.TestCase):
 
             metadata = _read_json(out_dir / "run_metadata.json")
             validation = _read_json(out_dir / "validation.json")
-            self.assertIsNone(metadata["timeout_seconds"])
-            self.assertFalse(metadata["timed_out"])
+            self.assertNotIn("timeout_seconds", metadata)
+            self.assertNotIn("timed_out", metadata)
             self.assertTrue(validation["correct"])
-            self.assertFalse(validation["timed_out"])
+            self.assertNotIn("timed_out", validation)
 
     def test_invalid_log_level_raises(self) -> None:
         """Invalid log levels should fail during settings validation."""

@@ -68,14 +68,15 @@ def _leaderboard_plot_chart(
 ) -> alt.LayerChart:
     """Return the aggregate leaderboard chart with long runtimes capped."""
     plot_rows = _leaderboard_plot_rows(rows)
+    y_sort = [str(row["leaderboard_label"]) for row in plot_rows]
     y_encoding = alt.Y(
         "leaderboard_label:N",
         title=None,
-        sort=alt.SortField(field="total_seconds", order="ascending"),
+        sort=y_sort,
     )
     base = alt.Chart(alt.Data(values=plot_rows))
-    chart = (
-        base
+    completed_chart = (
+        base.transform_filter("!datum.timed_out")
         .mark_bar()
         .encode(
             x=alt.X(
@@ -97,48 +98,33 @@ def _leaderboard_plot_chart(
                     ]
                 ),
             ),
-            tooltip=[
-                alt.Tooltip("rank:Q", title="Rank"),
-                alt.Tooltip("implementation_id:N", title="Implementation"),
-                alt.Tooltip("nwb_interface:N", title="NWB interface"),
-                alt.Tooltip("object_store_backend:N", title="Object store backend"),
-                alt.Tooltip("benchmark_id:N", title="Benchmark"),
-                alt.Tooltip("run_status:N", title="Run status"),
-                alt.Tooltip("datetime_utc:N", title="Run UTC"),
-                alt.Tooltip("local_cache:N", title="Local cache"),
-                alt.Tooltip("remote_cache:N", title="Remote cache"),
-                alt.Tooltip(
-                    "timeout_seconds:Q",
-                    title="Timeout seconds",
-                    format=",.3f",
+            tooltip=_leaderboard_tooltips(include_timeout_seconds=False),
+        )
+    )
+    timeout_chart = (
+        base.transform_filter(alt.datum.timed_out)
+        .mark_bar()
+        .encode(
+            x=alt.X(
+                "plot_total_seconds:Q",
+                title="total seconds (capped at 20 s)",
+                scale=alt.Scale(domain=[0.0, _LEADERBOARD_PLOT_MAX_SECONDS]),
+            ),
+            y=y_encoding,
+            color=alt.Color(
+                "benchmark_id:N",
+                title="benchmark",
+                scale=alt.Scale(
+                    range=[
+                        _DASHBOARD_COLORS["cpu_process"],
+                        _DASHBOARD_COLORS["timing"],
+                        _DASHBOARD_COLORS["memory"],
+                        _DASHBOARD_COLORS["cpu_system"],
+                        _DASHBOARD_COLORS["network_received"],
+                    ]
                 ),
-                alt.Tooltip(
-                    "total_seconds_truncated_label:N",
-                    title="Truncated at 20 s",
-                ),
-                alt.Tooltip("total_seconds:Q", title="Total seconds", format=",.3f"),
-                alt.Tooltip("setup_seconds:Q", title="Setup seconds", format=",.3f"),
-                alt.Tooltip(
-                    "submit_answers_seconds:Q",
-                    title="Submit seconds",
-                    format=",.3f",
-                ),
-                alt.Tooltip(
-                    "peak_rss_delta_mib:Q",
-                    title="Peak RSS delta MiB",
-                    format=",.1f",
-                ),
-                alt.Tooltip(
-                    "peak_rss_mib:Q",
-                    title="Raw peak RSS MiB",
-                    format=",.1f",
-                ),
-                alt.Tooltip(
-                    "network_received_mib:Q",
-                    title="Network received MiB",
-                    format=",.1f",
-                ),
-            ],
+            ),
+            tooltip=_leaderboard_tooltips(include_timeout_seconds=True),
         )
     )
     truncated_labels = (
@@ -180,7 +166,13 @@ def _leaderboard_plot_chart(
         .encode(x=alt.X("cap_seconds:Q"))
     )
     return (
-        alt.layer(chart, cap_rule, truncated_labels, timeout_labels)
+        alt.layer(
+            completed_chart,
+            timeout_chart,
+            cap_rule,
+            truncated_labels,
+            timeout_labels,
+        )
         .properties(
             title=alt.TitleParams(
                 text="NeuroDataBench Leaderboard",
@@ -190,6 +182,55 @@ def _leaderboard_plot_chart(
             height=max(90, min(28 * len(rows), 720)),
         )
     )
+
+
+def _leaderboard_tooltips(
+    *,
+    include_timeout_seconds: bool,
+) -> list[alt.Tooltip]:
+    """Return leaderboard tooltip fields for completed or timed-out bars."""
+    tooltips = [
+        alt.Tooltip("implementation_id:N", title="Implementation"),
+        alt.Tooltip("nwb_interface:N", title="NWB interface"),
+        alt.Tooltip("object_store_backend:N", title="Object store backend"),
+        alt.Tooltip("benchmark_id:N", title="Benchmark"),
+        alt.Tooltip("run_status:N", title="Run status"),
+        alt.Tooltip("datetime_utc:N", title="Run UTC"),
+        alt.Tooltip("local_cache:N", title="Local cache"),
+        alt.Tooltip("remote_cache:N", title="Remote cache"),
+        alt.Tooltip("total_seconds:Q", title="Total seconds", format=",.3f"),
+        alt.Tooltip("setup_seconds:Q", title="Setup seconds", format=",.3f"),
+        alt.Tooltip(
+            "submit_answers_seconds:Q",
+            title="Submit seconds",
+            format=",.3f",
+        ),
+        alt.Tooltip(
+            "peak_rss_delta_mib:Q",
+            title="Peak RSS delta MiB",
+            format=",.1f",
+        ),
+        alt.Tooltip(
+            "peak_rss_mib:Q",
+            title="Raw peak RSS MiB",
+            format=",.1f",
+        ),
+        alt.Tooltip(
+            "network_received_mib:Q",
+            title="Network received MiB",
+            format=",.1f",
+        ),
+    ]
+    if include_timeout_seconds:
+        tooltips.insert(
+            5,
+            alt.Tooltip(
+                "timeout_seconds:Q",
+                title="Timeout seconds",
+                format=",.3f",
+            ),
+        )
+    return tooltips
 
 
 def _leaderboard_plot_rows(
@@ -211,13 +252,23 @@ def _leaderboard_plot_rows(
         )
         plot_row["timed_out"] = timed_out
         plot_row["timed_out_label"] = "timed out" if timed_out else ""
+        if not timed_out:
+            plot_row.pop("timeout_seconds", None)
         plot_row["total_seconds_truncated"] = is_truncated
-        plot_row["total_seconds_truncated_label"] = "yes" if is_truncated else "no"
         plot_row["plot_total_seconds_label"] = (
             f"{total_seconds:,.1f} s" if is_truncated else ""
         )
         plot_rows.append(plot_row)
-    return plot_rows
+    return sorted(
+        plot_rows,
+        key=lambda row: (
+            str(row.get("benchmark_id", "")),
+            _json_number_at(row, ("total_seconds",)) or 0.0,
+            str(row.get("implementation_id", "")),
+            str(row.get("datetime_utc", "")),
+            str(row.get("result_dir", "")),
+        ),
+    )
 
 
 def _result_dashboard_chart(

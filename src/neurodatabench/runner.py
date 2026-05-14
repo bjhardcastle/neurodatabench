@@ -399,7 +399,7 @@ def main(
             )
         except neurodatabench.validation.BenchmarkValidationError as error:
             raise SystemExit(str(error)) from None
-        validation = {"correct": True, "timed_out": False}
+        validation = {"correct": True}
     metadata = _run_metadata(
         implementation=implementation,
         benchmark_source=benchmark_source,
@@ -704,12 +704,10 @@ def _run_metadata(
     timed_out: bool,
 ) -> neurodatabench.models.JsonObject:
     """Collect run metadata."""
-    return {
+    metadata: neurodatabench.models.JsonObject = {
         "datetime_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "hostname": socket.gethostname(),
         "benchmark_harness_version": _package_version("neurodatabench"),
-        "timeout_seconds": timeout_seconds,
-        "timed_out": timed_out,
         "implementation": _jsonable(implementation),
         "benchmark": {
             "id": benchmark.id,
@@ -744,6 +742,11 @@ def _run_metadata(
         ),
         "requirements": _REQUIREMENTS_ARTIFACT_NAME,
     }
+    if timed_out:
+        assert timeout_seconds is not None
+        metadata["timed_out"] = True
+        metadata["timeout_seconds"] = timeout_seconds
+    return metadata
 
 
 def _write_result_artifacts(
@@ -841,10 +844,9 @@ def _leaderboard_rows(results_dir: Path) -> list[neurodatabench.models.JsonObjec
             str(row["datetime_utc"]),
         )
     )
-    for index, row in enumerate(rows, start=1):
-        row["rank"] = index
+    for row in rows:
         row["leaderboard_label"] = (
-            f"{index}. {row['implementation_id']} "
+            f"{row['implementation_id']} "
             f"({row['benchmark_id']}, {row['datetime_utc']})"
         )
     return rows
@@ -901,8 +903,7 @@ def _leaderboard_row(run_dir: Path) -> neurodatabench.models.JsonObject | None:
         profile_summary,
         ("network_delta", "bytes_recv"),
     )
-    return {
-        "rank": 0,
+    row: neurodatabench.models.JsonObject = {
         "result_dir": run_dir.name,
         "leaderboard_label": run_dir.name,
         "datetime_utc": str(metadata.get("datetime_utc", "")),
@@ -914,9 +915,7 @@ def _leaderboard_row(run_dir: Path) -> neurodatabench.models.JsonObject | None:
         "local_cache": str(implementation.get("local_cache", "")),
         "remote_cache": str(implementation.get("remote_cache", "")),
         "correct": correct,
-        "timed_out": timed_out,
         "run_status": "timed out" if timed_out else "correct",
-        "timeout_seconds": metadata.get("timeout_seconds"),
         "total_seconds": total_duration_ns / 1_000_000_000,
         "setup_seconds": setup_duration_ns / 1_000_000_000,
         "submit_answers_seconds": submit_answers_duration_ns / 1_000_000_000,
@@ -934,6 +933,12 @@ def _leaderboard_row(run_dir: Path) -> neurodatabench.models.JsonObject | None:
             else network_received_bytes / 1_048_576
         ),
     }
+    timeout_seconds = metadata.get("timeout_seconds")
+    if timed_out:
+        row["timed_out"] = True
+        if timeout_seconds is not None:
+            row["timeout_seconds"] = timeout_seconds
+    return row
 
 
 def _write_leaderboard_csv(
@@ -942,7 +947,6 @@ def _write_leaderboard_csv(
 ) -> None:
     """Write leaderboard rows as a CSV table."""
     fieldnames = [
-        "rank",
         "implementation_id",
         "nwb_interface",
         "object_store_backend",
@@ -951,9 +955,7 @@ def _write_leaderboard_csv(
         "local_cache",
         "remote_cache",
         "correct",
-        "timed_out",
         "run_status",
-        "timeout_seconds",
         "total_seconds",
         "setup_seconds",
         "submit_answers_seconds",
@@ -963,6 +965,10 @@ def _write_leaderboard_csv(
         "datetime_utc",
         "result_dir",
     ]
+    if any("timed_out" in row for row in rows):
+        fieldnames.insert(fieldnames.index("run_status"), "timed_out")
+    if any("timeout_seconds" in row for row in rows):
+        fieldnames.insert(fieldnames.index("total_seconds"), "timeout_seconds")
     with path.open("w", encoding="utf-8", newline="") as file:
         writer = csv.DictWriter(file, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
