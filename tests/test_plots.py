@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import unittest
 
+import neurodatabench.models
 import neurodatabench.plots
 
 
@@ -203,6 +204,92 @@ class PlotTests(unittest.TestCase):
         )
         self.assertIn("NWB interface pynwb", title["subtitle"])
         self.assertIn("object store remfile", title["subtitle"])
+
+    def test_timing_summary_rows_split_submit_answers_by_question(self) -> None:
+        """Submit-answer timing should show one segment per submitted question."""
+        timings = neurodatabench.models.RunTimings(
+            setup_duration_ns=1,
+            submit_answers_duration_ns=8,
+            total_duration_ns=9,
+            phase_timings=[
+                neurodatabench.models.RunPhaseTiming(
+                    phase="setup",
+                    start_seconds=0.0,
+                    stop_seconds=1.0,
+                    duration_seconds=1.0,
+                ),
+                neurodatabench.models.RunPhaseTiming(
+                    phase="submit_answers",
+                    start_seconds=1.0,
+                    stop_seconds=9.0,
+                    duration_seconds=8.0,
+                ),
+                neurodatabench.models.RunPhaseTiming(
+                    phase="total",
+                    start_seconds=0.0,
+                    stop_seconds=9.0,
+                    duration_seconds=9.0,
+                ),
+            ],
+            answer_submissions=[
+                neurodatabench.models.AnswerSubmissionTiming(
+                    question_id="q1",
+                    submitted_at="2026-05-14T00:00:02Z",
+                    submitted_elapsed_seconds=3.0,
+                ),
+                neurodatabench.models.AnswerSubmissionTiming(
+                    question_id="q2",
+                    submitted_at="2026-05-14T00:00:05Z",
+                    submitted_elapsed_seconds=7.0,
+                ),
+            ],
+        )
+
+        rows = neurodatabench.plots._timing_summary_rows(timings)
+
+        self.assertEqual(
+            [(row["phase"], row["segment"]) for row in rows],
+            [
+                ("setup", "setup"),
+                ("submit_answers", "q1"),
+                ("submit_answers", "q2"),
+                ("submit_answers", "after final submission"),
+            ],
+        )
+        self.assertEqual(rows[1]["start_seconds"], 1.0)
+        self.assertEqual(rows[1]["stop_seconds"], 3.0)
+        self.assertEqual(rows[2]["duration_seconds"], 4.0)
+        self.assertEqual(rows[3]["duration_seconds"], 2.0)
+
+    def test_timing_summary_rows_keep_submit_phase_when_answers_missing(self) -> None:
+        """Runs without per-answer timings should keep the aggregate submit row."""
+        timings = neurodatabench.models.RunTimings(
+            setup_duration_ns=1,
+            submit_answers_duration_ns=8,
+            total_duration_ns=9,
+            phase_timings=[
+                neurodatabench.models.RunPhaseTiming(
+                    phase="setup",
+                    start_seconds=0.0,
+                    stop_seconds=1.0,
+                    duration_seconds=1.0,
+                ),
+                neurodatabench.models.RunPhaseTiming(
+                    phase="submit_answers",
+                    start_seconds=1.0,
+                    stop_seconds=9.0,
+                    duration_seconds=8.0,
+                ),
+            ],
+            answer_submissions=[],
+        )
+
+        rows = neurodatabench.plots._timing_summary_rows(timings)
+
+        self.assertEqual(
+            [(row["phase"], row["segment"]) for row in rows],
+            [("setup", "setup"), ("submit_answers", "submit_answers")],
+        )
 
 
 if __name__ == "__main__":

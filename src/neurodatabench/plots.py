@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import dataclasses
 import logging
 from collections.abc import Sequence
 from pathlib import Path
@@ -18,9 +17,9 @@ logger = logging.getLogger(__name__)
 _LEADERBOARD_PLOT_MAX_SECONDS = 20.0
 _DASHBOARD_COLORS: dict[str, str] = {
     "timing": "#d97706",
-    "memory": "#7c3aed",
+    "memory": "#e11d48",
     "cpu_process": "#059669",
-    "cpu_system": "#e11d48",
+    "cpu_system": "#7c3aed",
     "network_received": "#0f766e",
     "event_setup": "#64748b",
     "event_answer": "#f97316",
@@ -436,15 +435,16 @@ def _timing_summary_chart(
     time_domain: tuple[float, float],
 ) -> alt.Chart:
     """Return an Altair horizontal start/stop chart of benchmark timing phases."""
-    rows = [
-        dataclasses.asdict(phase_timing)
-        for phase_timing in timings.phase_timings
-        if phase_timing.phase != "total"
-    ]
-    phase_order = [row["phase"] for row in rows]
+    rows = _timing_summary_rows(timings)
+    phase_order = list(dict.fromkeys(str(row["phase"]) for row in rows))
     chart = (
         alt.Chart(alt.Data(values=rows))
-        .mark_bar(color=_DASHBOARD_COLORS["timing"], size=8)
+        .mark_bar(
+            color=_DASHBOARD_COLORS["timing"],
+            size=8,
+            stroke="#ffffff",
+            strokeWidth=0.8,
+        )
         .encode(
             x=alt.X(
                 "start_seconds:Q",
@@ -455,6 +455,7 @@ def _timing_summary_chart(
             y=alt.Y("phase:N", title=None, sort=phase_order),
             tooltip=[
                 alt.Tooltip("phase:N", title="Phase"),
+                alt.Tooltip("segment:N", title="Segment"),
                 alt.Tooltip("start_seconds:Q", title="Start", format=",.3f"),
                 alt.Tooltip("stop_seconds:Q", title="Stop", format=",.3f"),
                 alt.Tooltip("duration_seconds:Q", title="Duration", format=",.3f"),
@@ -463,6 +464,88 @@ def _timing_summary_chart(
         .properties(title="Benchmark Timing", width=904, height=48)
     )
     return chart
+
+
+def _timing_summary_rows(
+    timings: neurodatabench.models.RunTimings,
+) -> list[dict[str, object]]:
+    """Return phase timing rows, splitting submit answers by question submission."""
+    rows: list[dict[str, object]] = []
+    for phase_timing in timings.phase_timings:
+        if phase_timing.phase == "total":
+            continue
+        if phase_timing.phase != "submit_answers":
+            rows.append(_phase_timing_row(phase_timing, segment=phase_timing.phase))
+            continue
+
+        submit_rows = _submit_answer_timing_rows(phase_timing, timings)
+        rows.extend(submit_rows)
+
+    return rows
+
+
+def _phase_timing_row(
+    phase_timing: neurodatabench.models.RunPhaseTiming,
+    *,
+    segment: str,
+) -> dict[str, object]:
+    """Return a chart row for one timing segment."""
+    return {
+        "phase": phase_timing.phase,
+        "segment": segment,
+        "start_seconds": phase_timing.start_seconds,
+        "stop_seconds": phase_timing.stop_seconds,
+        "duration_seconds": phase_timing.duration_seconds,
+    }
+
+
+def _submit_answer_timing_rows(
+    phase_timing: neurodatabench.models.RunPhaseTiming,
+    timings: neurodatabench.models.RunTimings,
+) -> list[dict[str, object]]:
+    """Return submit-answer phase rows split by observed answer submissions."""
+    submissions = sorted(
+        (
+            submission
+            for submission in timings.answer_submissions
+            if submission.submitted_elapsed_seconds is not None
+        ),
+        key=lambda submission: float(submission.submitted_elapsed_seconds or 0.0),
+    )
+    if not submissions:
+        return [_phase_timing_row(phase_timing, segment=phase_timing.phase)]
+
+    rows: list[dict[str, object]] = []
+    previous_stop_seconds = phase_timing.start_seconds
+    for submission in submissions:
+        submitted_elapsed_seconds = float(submission.submitted_elapsed_seconds or 0.0)
+        stop_seconds = min(
+            max(submitted_elapsed_seconds, previous_stop_seconds),
+            phase_timing.stop_seconds,
+        )
+        rows.append(
+            {
+                "phase": phase_timing.phase,
+                "segment": submission.question_id,
+                "start_seconds": previous_stop_seconds,
+                "stop_seconds": stop_seconds,
+                "duration_seconds": stop_seconds - previous_stop_seconds,
+            }
+        )
+        previous_stop_seconds = stop_seconds
+
+    if previous_stop_seconds < phase_timing.stop_seconds:
+        rows.append(
+            {
+                "phase": phase_timing.phase,
+                "segment": "after final submission",
+                "start_seconds": previous_stop_seconds,
+                "stop_seconds": phase_timing.stop_seconds,
+                "duration_seconds": phase_timing.stop_seconds
+                - previous_stop_seconds,
+            }
+        )
+    return rows
 
 
 def _memory_profile_chart(
