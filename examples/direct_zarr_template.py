@@ -38,6 +38,8 @@ logger = logging.getLogger(__name__)
 _DEFAULT_BACKEND = "s3fs"
 _DEFAULT_BENCHMARK = "dynamic_routing_zarr_v0"
 _DEFAULT_IMPLEMENTATION_ID = "direct_zarr"
+_FACEMAP_DOWNLOAD_ROWS = 12_850
+_FACEMAP_DOWNLOAD_COLUMNS = 128
 
 
 def setup(context: neurodatabench.RunContext) -> None:
@@ -70,6 +72,8 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
                 answer = _longest_isi_for_fastest_visp_unit(context.benchmark.nwb_paths)
             case "mean_trial_length":
                 answer = _mean_trial_length(context.benchmark.nwb_paths)
+            case "facemap_side_camera_download_mean":
+                answer = _facemap_side_camera_download_mean(context.benchmark.nwb_paths)
             case _:
                 raise ValueError(f"Unsupported benchmark question: {question.id}")
         context.submit_answer(question.id, answer)
@@ -260,6 +264,18 @@ def _mean_trial_length(nwb_paths: list[str]) -> float:
     if total_trials == 0:
         raise ValueError("No trials were found.")
     return total_duration / total_trials
+
+
+def _facemap_side_camera_download_mean(nwb_paths: list[str]) -> float:
+    """Return the mean of a 6.6 MB facemap data block from the first NWB store."""
+    if not nwb_paths:
+        raise ValueError("At least one NWB path is required.")
+    facemap = _open_store(nwb_paths[0])["processing"]["behavior"]["facemap_side_camera"]
+    data = np.asarray(
+        facemap["data"][:_FACEMAP_DOWNLOAD_ROWS, :_FACEMAP_DOWNLOAD_COLUMNS],
+        dtype=np.float32,
+    )
+    return float(np.mean(data, dtype=np.float64))
 
 
 if __name__ == "__main__":

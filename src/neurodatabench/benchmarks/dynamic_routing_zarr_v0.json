@@ -1,7 +1,7 @@
 {
   "id": "dynamic_routing_zarr_v0",
   "nwb_format": "zarr",
-  "timeout_seconds": 90,
+  "timeout_seconds": 120,
   "nwb_paths": [
     "s3://aind-open-data/ecephys_664851_2023-11-15_12-38-21_nwb_2026-05-07_13-58-17/664851_2023-11-15.nwb.zarr",
     "s3://aind-open-data/ecephys_759434_2025-02-04_12-27-22_nwb_2026-05-07_13-56-38/759434_2025-02-04.nwb.zarr",
@@ -24,6 +24,11 @@
       "id": "mean_trial_length",
       "text": "What's the mean length of trials (`stop_time` - `start_time`) in the `intervals/trials` table across all sessions?",
       "answer": 5.529684329819269
+    },
+    {
+      "id": "facemap_side_camera_download_mean",
+      "text": "In the first session, read rows 0 through 12,849 and columns 0 through 127 from `processing/behavior/facemap_side_camera/data`. What is the mean value of this 12,850 x 128 float32 block?",
+      "answer": 0.25216061716519567
     }
   ]
 }

@@ -44,6 +44,8 @@ state: dict[str, Any] = {}
 _DEFAULT_BACKEND = "remfile"
 _DEFAULT_BENCHMARK = "dynamic_routing_hdf5_v0"
 _DEFAULT_IMPLEMENTATION_ID = "pynwb_hdf5_nwbfile"
+_FACEMAP_DOWNLOAD_ROWS = 12_850
+_FACEMAP_DOWNLOAD_COLUMNS = 128
 
 
 def setup(context: neurodatabench.RunContext) -> None:
@@ -93,6 +95,8 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
                 answer = _longest_isi_for_fastest_visp_unit(state["files"])
             case "mean_trial_length":
                 answer = _mean_trial_length(state["files"])
+            case "facemap_side_camera_download_mean":
+                answer = _facemap_side_camera_download_mean(state["files"])
             case _:
                 raise ValueError(f"Unsupported benchmark question: {question.id}")
         context.submit_answer(question.id, answer)
@@ -262,6 +266,19 @@ def _string_array(values: Any) -> np.ndarray:
         ],
         dtype=str,
     )
+
+
+def _facemap_side_camera_download_mean(file_records: list[dict[str, Any]]) -> float:
+    """Return the mean of a 6.6 MB facemap data block from the first NWBFile."""
+    if not file_records:
+        raise ValueError("At least one NWBFile record is required.")
+    nwb_file = file_records[0]["nwb_file"]
+    facemap = nwb_file.processing["behavior"]["facemap_side_camera"]
+    data = np.asarray(
+        facemap.data[:_FACEMAP_DOWNLOAD_ROWS, :_FACEMAP_DOWNLOAD_COLUMNS],
+        dtype=np.float32,
+    )
+    return float(np.mean(data, dtype=np.float64))
 
 
 if __name__ == "__main__":

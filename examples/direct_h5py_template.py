@@ -40,6 +40,8 @@ logger = logging.getLogger(__name__)
 _DEFAULT_BACKEND = "remfile"
 _DEFAULT_BENCHMARK = "dynamic_routing_hdf5_v0"
 _DEFAULT_IMPLEMENTATION_ID = "direct_h5py"
+_FACEMAP_DOWNLOAD_ROWS = 12_850
+_FACEMAP_DOWNLOAD_COLUMNS = 128
 
 
 def setup(context: neurodatabench.RunContext) -> None:
@@ -72,6 +74,8 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
                 )
             case "mean_trial_length":
                 answer = _mean_trial_length(context.benchmark.nwb_paths)
+            case "facemap_side_camera_download_mean":
+                answer = _facemap_side_camera_download_mean(context.benchmark.nwb_paths)
             case _:
                 raise ValueError(f"Unsupported benchmark question: {question.id}")
         context.submit_answer(question.id, answer)
@@ -231,6 +235,19 @@ def _read_string_array(dataset: h5py.Dataset) -> np.ndarray:
     """Read an HDF5 string dataset as a NumPy array of Python strings."""
     values = dataset.asstr()[:]
     return np.asarray(values, dtype=str)
+
+
+def _facemap_side_camera_download_mean(nwb_paths: list[str]) -> float:
+    """Return the mean of a 6.6 MB facemap data block from the first NWB file."""
+    if not nwb_paths:
+        raise ValueError("At least one NWB path is required.")
+    with _open_nwb(nwb_paths[0]) as nwb_file:
+        facemap_data = nwb_file["processing"]["behavior"]["facemap_side_camera"]["data"]
+        data = np.asarray(
+            facemap_data[:_FACEMAP_DOWNLOAD_ROWS, :_FACEMAP_DOWNLOAD_COLUMNS],
+            dtype=np.float32,
+        )
+    return float(np.mean(data, dtype=np.float64))
 
 
 if __name__ == "__main__":

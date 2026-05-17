@@ -2,14 +2,14 @@
 # requires-python = ">=3.10"
 # dependencies = [
 #   "altair",
-#   "lazynwb==1.0.0dev3",
+#   "lazynwb==1.0.0dev5",
 #   "numpy",
 #   "polars",
 #   "psutil",
 # ]
 # ///
 
-"""Runnable lazynwb 1.0.0dev3 implementation for the packaged NWB benchmark."""
+"""Runnable lazynwb 1.0.0dev5 implementation for the packaged NWB benchmark."""
 
 from __future__ import annotations
 
@@ -25,6 +25,7 @@ if _REPO_SRC.exists():
 
 import lazynwb
 import lazynwb.tables
+import lazynwb.timeseries
 import numpy as np
 import polars as pl
 
@@ -36,7 +37,9 @@ state = {}
 
 _DEFAULT_BACKEND = "obstore"
 _DEFAULT_BENCHMARK = "dynamic_routing_hdf5_v0"
-_DEFAULT_IMPLEMENTATION_ID = "lazynwb_v1dev3"
+_DEFAULT_IMPLEMENTATION_ID = "lazynwb_v1dev5"
+_FACEMAP_DOWNLOAD_ROWS = 12_850
+_FACEMAP_DOWNLOAD_COLUMNS = 128
 
 
 def clear_cache(context: neurodatabench.RunContext) -> None:
@@ -66,6 +69,11 @@ def setup(context: neurodatabench.RunContext) -> None:
         context.benchmark.nwb_paths,
         "/intervals/trials",
         disable_progress=True,
+    )
+    state["facemap_side_camera"] = lazynwb.timeseries.get_timeseries(
+        context.benchmark.nwb_paths[0],
+        "/processing/behavior/facemap_side_camera",
+        exact_path=True,
     )
 
 
@@ -104,6 +112,17 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
                     )
                     .collect()
                     .item()
+                )
+            case "facemap_side_camera_download_mean":
+                data = np.asarray(
+                    state["facemap_side_camera"].data[
+                        :_FACEMAP_DOWNLOAD_ROWS,
+                        :_FACEMAP_DOWNLOAD_COLUMNS,
+                    ],
+                    dtype=np.float32,
+                )
+                answer = float(
+                    np.mean(data, dtype=np.float64),
                 )
             case _:
                 raise ValueError(f"Unsupported benchmark question: {question.id}")

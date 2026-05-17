@@ -9,7 +9,7 @@ authors = [
 requires-python = ">=3.10"
 dependencies = [
     "altair>=5.0",
-    "lazynwb==1.0.0.dev2",
+    "lazynwb==1.0.0.dev5",
     "numpy",
     "polars==1.38.1",
     "psutil",

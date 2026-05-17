@@ -184,10 +184,10 @@ def _matrix() -> list[MatrixRun]:
         for local_cache in ("cold", "warm"):
             runs.append(
                 MatrixRun(
-                    label=f"lazynwb-1.0.0dev3-{nwb_format}-obstore-{local_cache}",
+                    label=f"lazynwb-1.0.0dev5-{nwb_format}-obstore-{local_cache}",
                     helper="examples/lazynwb_v1dev.py",
                     benchmark=benchmark,
-                    implementation_id=f"lazynwb_1dev3_{nwb_format}_{local_cache}",
+                    implementation_id=f"lazynwb_1dev5_{nwb_format}_{local_cache}",
                     object_store_backend="obstore",
                     nwb_format=nwb_format,  # type: ignore[arg-type]
                     local_cache=local_cache,
