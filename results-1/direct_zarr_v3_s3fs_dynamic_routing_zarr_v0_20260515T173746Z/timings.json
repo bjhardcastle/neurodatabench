@@ -1,0 +1,42 @@
+{
+  "answer_submissions": [
+    {
+      "question_id": "units_VISp_default_qc",
+      "submitted_at": "2026-05-15T17:37:50.739586+00:00",
+      "submitted_elapsed_seconds": 4.1868659
+    },
+    {
+      "question_id": "mean_inter_spike_interval",
+      "submitted_at": "2026-05-15T17:37:54.166308+00:00",
+      "submitted_elapsed_seconds": 7.6135953
+    },
+    {
+      "question_id": "mean_trial_length",
+      "submitted_at": "2026-05-15T17:37:57.580134+00:00",
+      "submitted_elapsed_seconds": 11.0274271
+    }
+  ],
+  "phase_timings": [
+    {
+      "duration_seconds": 7.01e-05,
+      "phase": "setup",
+      "start_seconds": 0.0,
+      "stop_seconds": 7.01e-05
+    },
+    {
+      "duration_seconds": 11.027363,
+      "phase": "submit_answers",
+      "start_seconds": 7.01e-05,
+      "stop_seconds": 11.0274331
+    },
+    {
+      "duration_seconds": 11.0274366,
+      "phase": "total",
+      "start_seconds": 0.0,
+      "stop_seconds": 11.0274366
+    }
+  ],
+  "setup_duration_ns": 70100,
+  "submit_answers_duration_ns": 11027363000,
+  "total_duration_ns": 11027436600
+}

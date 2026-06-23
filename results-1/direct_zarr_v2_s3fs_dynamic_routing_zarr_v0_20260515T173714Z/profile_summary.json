@@ -1,0 +1,30 @@
+{
+  "baseline_process_plus_children_rss_bytes": 89317376,
+  "baseline_process_rss_bytes": 89317376,
+  "disk_delta": {
+    "read_bytes": 159744,
+    "read_count": 7,
+    "read_time": 0,
+    "write_bytes": 24530944,
+    "write_count": 2219,
+    "write_time": 0
+  },
+  "disk_scope": "system_delta",
+  "network_delta": {
+    "bytes_recv": 6618595,
+    "bytes_sent": 715554,
+    "dropin": 0,
+    "dropout": 0,
+    "errin": 0,
+    "errout": 0,
+    "packets_recv": 5726,
+    "packets_sent": 2268
+  },
+  "network_scope": "system_delta",
+  "num_samples": 46,
+  "peak_process_plus_children_rss_bytes": 132841472,
+  "peak_process_plus_children_rss_delta_bytes": 43524096,
+  "peak_process_rss_bytes": 132841472,
+  "peak_process_rss_delta_bytes": 43524096,
+  "sample_interval_seconds": 0.25
+}

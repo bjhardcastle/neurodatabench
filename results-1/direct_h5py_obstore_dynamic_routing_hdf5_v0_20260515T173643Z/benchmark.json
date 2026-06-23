@@ -1,0 +1,29 @@
+{
+  "id": "dynamic_routing_hdf5_v0",
+  "nwb_format": "hdf5",
+  "nwb_paths": [
+    "s3://aind-scratch-data/dynamic-routing/cache/nwb/v0.0.273/664851_2023-11-15.nwb",
+    "s3://aind-scratch-data/dynamic-routing/cache/nwb/v0.0.273/759434_2025-02-04.nwb",
+    "s3://aind-scratch-data/dynamic-routing/cache/nwb/v0.0.273/742903_2024-10-22.nwb",
+    "s3://aind-scratch-data/dynamic-routing/cache/nwb/v0.0.273/668755_2023-08-31.nwb",
+    "s3://aind-scratch-data/dynamic-routing/cache/nwb/v0.0.273/713655_2024-08-09.nwb"
+  ],
+  "questions": [
+    {
+      "answer": 57,
+      "id": "units_VISp_default_qc",
+      "text": "How many units are in VISp where default_qc is True?"
+    },
+    {
+      "answer": 2.461157454828708,
+      "id": "mean_inter_spike_interval",
+      "text": "Find the spike_times for the unit with the highest firing rate in VISp using `firing_rate`. What is its longest inter-spike interval?"
+    },
+    {
+      "answer": 5.529684329819269,
+      "id": "mean_trial_length",
+      "text": "What's the mean length of trials (`stop_time` - `start_time`) in the `intervals/trials` table across all sessions?"
+    }
+  ],
+  "timeout_seconds": 90
+}
