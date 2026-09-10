@@ -2,7 +2,10 @@
 
 ## Current Notes
 
-* Added a pure-download benchmark question, `facemap_side_camera_download_mean`, to both dynamic-routing benchmark JSONs. It reads rows `0:12850` and columns `0:128` from the first session's `/processing/behavior/facemap_side_camera/data` TimeSeries array and asks for the float mean. This returns exactly 6,579,200 float32 data bytes; in the first Zarr store it spans one natural row chunk band and four column chunk objects totaling about 6.25 MB compressed, while the HDF5 dataset is contiguous and uncompressed. The expected answer for both packaged formats is `0.25216061716519567`. The benchmark timeout is now 120 seconds to account for the intentional transfer without letting it dominate the whole matrix.
+* Implementation scripts now live in the top-level `implementations/` directory. The four source scripts recovered from `benchmark-runs-20260909-dev6/results/` are named after their run configurations; the two timed-out PyNWB runs contain no implementation source.
+* The six-entry comparison in `benchmark-runs-20260909-dev6/results/` covers lazynwb from the `dev6` source branch at commit `c8eb7776079a4d598fe2e490518e6b76e87d874a`, direct h5py/Zarr, and true PyNWB materialization for HDF5/Zarr. HDF5 uses remfile for all three rows; Zarr uses s3fs. The machine's unavailable inherited `AWS_PROFILE=AINDDevelopersAccess` must be removed for anonymous s3fs reads. Four runs completed correctly. Both true PyNWB runs were truncated by the supervisor at 120 seconds and are represented by explicit timed-out leaderboard rows with supervisor-owned memory and network profiles. An earlier unrestricted PyNWB HDF5 attempt remained active for over 18 minutes and exceeded 19 GB RSS before it was stopped. The existing direct-array PyNWB/HDMF-Zarr dependency-stack helper completed in 26.505 seconds, but that result was moved to `benchmark-runs-20260909-dev6/excluded-diagnostics/` because it does not satisfy the requested true PyNWB comparison.
+* `examples/parquet_components_template.py` answers `dynamic_routing_hdf5_v0` from the public parquet component cache at `s3://aind-scratch-data/dynamic-routing/cache/nwb_components/v0.0.272/`, deriving session IDs from the benchmark NWB basenames and reading per-session `units/` and `trials/` parquet files through Polars with anonymous S3 storage options (`skip_signature=true`, `region=us-west-2` by default). The component cache matches the HDF5 benchmark table answers (`multisession_units_metadata_query == 57`, `multisession_table_query == 5.529684329819269`), not the current Zarr benchmark count. No facemap parquet component exists under that prefix, so the implementation still uses a narrow `remfile`/`h5py` source-NWB read for `large_array`. Matrix label: `parquet-components-hdf5-polars-s3-anon`; metadata uses `object_store_backend="polars_s3_anon"` and `remote_cache=True`.
+* Added a pure-download benchmark question, `large_array`, to both dynamic-routing benchmark JSONs. It reads rows `0:12850` and columns `0:128` from the first session's `/processing/behavior/facemap_side_camera/data` TimeSeries array and asks for the float mean. This returns exactly 6,579,200 float32 data bytes; in the first Zarr store it spans one natural row chunk band and four column chunk objects totaling about 6.25 MB compressed, while the HDF5 dataset is contiguous and uncompressed. The expected answer for both packaged formats is `0.25216061716519567`. The benchmark timeout is now 120 seconds to account for the intentional transfer without letting it dominate the whole matrix.
 * The lazynwb 1.0 development example and matrix rows now use `lazynwb==1.0.0dev5` with implementation IDs prefixed `lazynwb_1dev5`.
 * `examples/lazynwb_v1dev.py` is runnable from the repo checkout with `uv run examples/lazynwb_v1dev.py --out <dir>` by prepending local `src/` before importing `neurodatabench`. It depends on altair, `lazynwb==1.0.0dev5`, numpy, polars, and psutil in its inline script metadata.
 * The lazynwb example imports lazynwb/numpy/polars at module scope, reads NWB paths from each hook's `RunContext` instead of storing a module-level path copy, keeps the per-question lazynwb calls inline in `submit_answers()` instead of hiding them behind question helper functions, points `LAZYNWB_CATALOG_CACHE_PATH` at a fresh temp `catalog.sqlite` path in `setup()` and `clear_cache()`, configures lazynwb in `setup()`, and answers the benchmark questions directly. Facemap is a TimeSeries, so lazynwb examples should access it through `lazynwb.timeseries.get_timeseries(...).data`, not `scan_nwb`.
@@ -15,13 +18,13 @@
 * Validation errors now include both `submitted_answer=...` and `actual_answer=...` diagnostics for missing, duplicate, mismatched, and unknown-question submissions.
 * Answer validation lives in `neurodatabench.validation`; `runner.py` calls it after timed execution by default. End-of-run validation aggregates all missing, duplicate, mismatched, and unknown-question failures into one clean `SystemExit` message so user scripts show diagnostics without a traceback. `main(fail_fast=True)`, CLI `--fail-fast`, or `NDB_FAIL_FAST=true` validates each submitted answer immediately and logs a warning that this mode is for development only, not benchmark runs.
 * Successful runner executions log total/setup/submit-answer duration at INFO level. The default runner log level is INFO so finish timing is visible without a flag.
-* Benchmarks may define `timeout_seconds` as the default fair-run wall-clock budget. `neurodatabench.main()` does not enforce timeouts in-process; timeout enforcement belongs to the subprocess supervisor: `python -m neurodatabench.runner supervise --benchmark <benchmark> -- uv run <implementation.py> ...`. Supervisor `--timeout-seconds` overrides the benchmark default, `--no-timeout` disables enforcement, and timeout messages report the actual elapsed supervisor duration when the child has been killed.
+* Benchmarks may define `timeout_seconds` as the default fair-run wall-clock budget. `neurodatabench.main()` does not enforce timeouts in-process; timeout enforcement belongs to the subprocess supervisor: `python -m neurodatabench.runner supervise --benchmark <benchmark> -- uv run <implementation.py> ...`. Supervisor `--timeout-seconds` overrides the benchmark default, `--no-timeout` disables enforcement, and timeout messages report the actual elapsed supervisor duration when the child has been killed. `--timeout-profile-out <run-dir>` enables a supervisor-owned process-tree profiler that persists `profile_samples.jsonl` and `profile_summary.json` before killing a timed-out child; matrix runs with `--out` pass this automatically.
 * `timings.json` includes explicit `phase_timings` start/stop/duration records and per-answer `submitted_elapsed_seconds`, so the dashboard does not need to reverse-engineer the run structure.
-* Successful result directories copy the inferred implementation hook source to `implementation.py`, record its original path in `run_metadata.json`, and include it in `results_bundle.zip`. Callers can pass `implementation_script=...`, `--implementation-script`, or `NDB_IMPLEMENTATION_SCRIPT` when the hook source is not the desired top-level script.
-* Each successful result directory includes one Altair HTML dashboard, `dashboard.html`, with timing, memory, CPU, and system network panes sharing one elapsed-time domain. Profile panes use absolute units: process+children RSS in MiB, process+children/system CPU in percent, and system network received in MiB since first sample. The dashboard title uses run metadata, including implementation ID, benchmark ID, timestamp, host, harness version, format, NWB interface, object-store backend, and cache metadata. The timing pane omits the redundant total bar, uses thin phase bars, and splits the `submit_answers` bar into stacked per-question segments when `timings.json` has answer submission timestamps; runs without per-answer timings keep the aggregate submit bar. Setup completion and answer submission annotations are hover-only vertical markers on the profile panes. Dashboard colors use a named palette in `neurodatabench.plots` that avoids a blue-heavy visual range. The dashboard artifact is included in `results_bundle.zip`, and dashboard rendering lives in `neurodatabench.plots`.
-* Complete runs written under a directory named `results` refresh aggregate leaderboard artifacts in that parent directory: `leaderboard.json`, `leaderboard.csv`, and `leaderboard.html`. Leaderboard rows are built from complete correct runs, sorted by benchmark ID and total runtime without materialized rank fields. Leaderboard JSON/CSV rows include implementation ID, NWB interface, object-store backend, NWB format, cache metadata, run status, timing, memory, and network summaries; legacy timed-out artifact rows are still tolerated by the reader and plotter. The leaderboard plot caps visible bars at 20 seconds, labels capped bars with their actual duration, groups by benchmark/time ordering, marks timed-out rows when present, and keeps exact totals in the tooltip/JSON/CSV.
-* Leaderboard plotting normalizes the row values it depends on, so CSV-like strings for `timed_out`, `run_status`, `total_seconds`, and `timeout_seconds` still produce visible timed-out bars with numeric tooltips.
-* `neurodatabench.runner.main()` now accepts dedicated implementation metadata fields (`implementation_id`, `implementation_nwb_interface`, `implementation_object_store_backend`, `implementation_local_cache`, `implementation_remote_cache`) instead of requiring callers to construct `models.Implementation`. If `out` and `--out` are omitted, the runner writes to a timestamped directory named `results/<implementation_id>_<benchmark>_<YYYYmmddTHHMMSSZ>`.
+* Successful result directories copy the inferred implementation hook source to `implementation.py` and record its original path in `run_metadata.json`. Callers can pass `implementation_script=...`, `--implementation-script`, or `NDB_IMPLEMENTATION_SCRIPT` when the hook source is not the desired top-level script.
+* Each successful result directory includes one Altair HTML dashboard, `dashboard.html`, with timing, memory, CPU, and system network panes sharing one elapsed-time domain. Profile panes use absolute units: process+children RSS in MiB, process+children/system CPU in percent, and system network received in MiB since first sample. The dashboard title uses run metadata, including implementation ID, benchmark ID, timestamp, host, harness version, format, NWB interface, object-store backend, and cache metadata. The timing pane omits the redundant total bar, uses thin phase bars, and splits the `submit_answers` bar into stacked per-question segments when `timings.json` has answer submission timestamps; runs without per-answer timings keep the aggregate submit bar. Setup completion and answer submission annotations are hover-only vertical markers on the profile panes. Dashboard colors use a named palette in `neurodatabench.plots` that avoids a blue-heavy visual range. Dashboard rendering lives in `neurodatabench.plots`.
+* Complete runs written under a directory named `results` refresh aggregate leaderboard artifacts in that parent directory: `leaderboard.json`, `leaderboard.csv`, and `leaderboard.html`. Leaderboard rows are built from complete correct runs, sorted by benchmark ID and total runtime without materialized rank fields. Leaderboard JSON rows include implementation ID, NWB interface, object-store backend, NWB format, cache metadata, run status, timing, memory, network summaries, and ordered timing segments. The leaderboard HTML shows aligned timing lanes split into setup and each submitted answer, followed by one shared memory axis and one shared network-received axis containing every implementation. Timed-out rows remain supported and are labeled `truncated at <timeout> s`; when the killed child cannot report phase state, its timing lane is explicitly marked `truncated (stage unknown)` while supervisor-owned resource traces remain available.
+* Leaderboard plotting normalizes the row values it depends on, so CSV-like strings for `timed_out`, `run_status`, `total_seconds`, and `timeout_seconds` still produce visible timed-out bars with numeric tooltips. Timed-out rows require only an observed total duration; setup and submit durations may be absent because a killed child cannot report trustworthy partial phase timing.
+* `neurodatabench.runner.main()` accepts dedicated implementation metadata fields (`implementation_id`, `implementation_nwb_interface`, `implementation_object_store_backend`, `implementation_local_cache`, `implementation_remote_cache`) instead of requiring callers to construct `models.Implementation`. `out`, `--out`, or `NDB_OUT` configures the artifact directory; when all are omitted, the runner writes directly to the inferred or configured implementation file's parent directory. If no implementation file can be resolved, callers must provide `out`.
 * Runner configuration now uses `pydantic-settings` rather than `argparse`. Call defaults can be overridden by Settings CLI flags such as `--benchmark`, `--out`, `--profile-interval-ms`, and `--log-level`, while missing values can come from `NDB_` environment variables such as `NDB_BENCHMARK`, `NDB_OUT`, and `NDB_LOG_LEVEL`.
 * `RunContext` is owned by `neurodatabench.models`; examples and templates should annotate hook contexts through the package root as `neurodatabench.RunContext`, not `neurodatabench.runner.RunContext`.
 * The public user API is available from the package root: prefer `import neurodatabench`, `neurodatabench.main(...)`, root model types such as `neurodatabench.RunContext`, and `neurodatabench.models` when the module namespace is useful.
@@ -157,7 +160,7 @@ The local smoke test should exercise packaged question resources, not only repo-
   ],
   "questions": [
     {
-      "id": "q001_units_VISp_default_qc",
+      "id": "q001_multisession_units_metadata_query",
       "text": "How many units are in VISp where default_qc is True?",
       "answer": 123
     },
@@ -274,7 +277,7 @@ def answer_questions(
     for question in questions:
         qid = question.id
 
-        if qid == "q001_units_VISp_default_qc":
+        if qid == "q001_multisession_units_metadata_query":
             filtered_unit_ids = [101, 204, 205, 301, 455] + list(range(1000, 1118))
             current_state["filtered_unit_ids"] = filtered_unit_ids
             question.answer = len(filtered_unit_ids)
@@ -511,7 +514,7 @@ from neurodatabench.models import (
     RunTimings,
     SubmittedAnswer,
 )
-from neurodatabench.packaging import write_result_bundle
+from neurodatabench.packaging import write_result_files
 from neurodatabench.profiling import Profiler
 from neurodatabench.schemas import (
     dataset_paths_from_questions,
@@ -634,7 +637,7 @@ def main(
         total_duration_ns=total_duration_ns,
     )
 
-    write_result_bundle(
+    write_result_files(
         out_dir=out_dir,
         questions=question_spec,
         metadata=metadata,
@@ -1301,7 +1304,6 @@ def diff_counters(
 from __future__ import annotations
 
 import json
-import zipfile
 from collections.abc import Sequence
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
@@ -1319,7 +1321,7 @@ JsonWritable: TypeAlias = JsonValue | JsonObject | RunTimings | ValidationSummar
 JsonLineRow: TypeAlias = SubmittedAnswer | JsonObject
 
 
-def write_result_bundle(
+def write_result_files(
     out_dir: Path,
     questions: JsonObject,
     metadata: JsonObject,
@@ -1329,7 +1331,7 @@ def write_result_bundle(
     profile_samples: list[JsonObject],
     profile_summary: JsonObject | None,
 ) -> None:
-    """Write all result files and package them into a zip bundle."""
+    """Write result files without creating a bundled archive."""
     write_json(out_dir / "questions.json", questions)
     write_json(out_dir / "run_metadata.json", metadata)
     write_json(out_dir / "timings.json", timings)
@@ -1338,16 +1340,6 @@ def write_result_bundle(
 
     write_jsonl(out_dir / "answers.jsonl", answers)
     write_jsonl(out_dir / "profile_samples.jsonl", profile_samples)
-
-    bundle_path = out_dir / "results_bundle.zip"
-
-    with zipfile.ZipFile(bundle_path, "w", compression=zipfile.ZIP_DEFLATED) as z:
-        for path in out_dir.iterdir():
-            if path.name == bundle_path.name:
-                continue
-            if path.is_file():
-                z.write(path, arcname=path.name)
-
 
 def write_json(path: Path, value: JsonWritable) -> None:
     """Write a dataclass or JSON value as pretty JSON."""
@@ -1381,7 +1373,6 @@ results/
   validation.json
   profile_samples.jsonl
   profile_summary.json
-  results_bundle.zip
 ```
 
 ---
@@ -1402,7 +1393,7 @@ results/
 # `answers.jsonl` shape
 
 ```json
-{"index":0,"question_id":"q001_units_VISp_default_qc","answer":123}
+{"index":0,"question_id":"q001_multisession_units_metadata_query","answer":123}
 ```
 
 ---
@@ -1523,7 +1514,6 @@ key_package_versions
 ## Packaging
 
 * [ ] Write all result files.
-* [ ] Create `results_bundle.zip`.
 * [ ] Include questions with answers.
 * [ ] Include metadata.
 * [ ] Include timings.

@@ -6,7 +6,9 @@
         "titleBar.activeBackground": "#322a7b",
         "titleBar.activeForeground": "#e7e7e7",
         "titleBar.inactiveBackground": "#322a7b99",
-        "titleBar.inactiveForeground": "#e7e7e799"
+        "titleBar.inactiveForeground": "#e7e7e799",
+        "commandCenter.foreground": "#e7e7e7"
     },
-    "peacock.color": "#322a7b"
+    "peacock.color": "#322a7b",
+    "python.defaultInterpreterPath": "C:\\Users\\ben.hardcastle\\github\\neurodatabench\\.venv\\Scripts\\python.exe"
 }

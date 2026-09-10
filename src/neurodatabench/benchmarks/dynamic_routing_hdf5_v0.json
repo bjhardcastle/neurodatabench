@@ -11,22 +11,22 @@
   ],
   "questions": [
     {
-      "id": "units_VISp_default_qc",
+      "id": "multisession_units_metadata_query",
       "text": "How many units are in VISp where default_qc is True?",
       "answer": 57
     },
     {
-      "id": "mean_inter_spike_interval",
+      "id": "predicated_spike_times",
       "text": "Find the spike_times for the unit with the highest firing rate in VISp using `firing_rate`. What is its longest inter-spike interval?",
       "answer": 2.461157454828708
     },
     {
-      "id": "mean_trial_length",
+      "id": "multisession_table_query",
       "text": "What's the mean length of trials (`stop_time` - `start_time`) in the `intervals/trials` table across all sessions?",
       "answer": 5.529684329819269
     },
     {
-      "id": "facemap_side_camera_download_mean",
+      "id": "large_array",
       "text": "In the first session, read rows 0 through 12,849 and columns 0 through 127 from `processing/behavior/facemap_side_camera/data`. What is the mean value of this 12,850 x 128 float32 block?",
       "answer": 0.25216061716519567
     }

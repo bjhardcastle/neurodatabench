@@ -28,10 +28,9 @@ _REPO_SRC = Path(__file__).resolve().parents[1] / "src"
 if _REPO_SRC.exists():
     sys.path.insert(0, _REPO_SRC.as_posix())
 
+import neurodatabench
 import numpy as np
 import zarr
-
-import neurodatabench
 
 logger = logging.getLogger(__name__)
 
@@ -66,14 +65,14 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
     for question in context.benchmark.questions:
         logger.debug("Answering benchmark question %s.", question.id)
         match question.id:
-            case "units_VISp_default_qc":
+            case "multisession_units_metadata_query":
                 answer = _count_visp_default_qc(context.benchmark.nwb_paths)
-            case "mean_inter_spike_interval":
+            case "predicated_spike_times":
                 answer = _longest_isi_for_fastest_visp_unit(context.benchmark.nwb_paths)
-            case "mean_trial_length":
-                answer = _mean_trial_length(context.benchmark.nwb_paths)
-            case "facemap_side_camera_download_mean":
-                answer = _facemap_side_camera_download_mean(context.benchmark.nwb_paths)
+            case "multisession_table_query":
+                answer = _multisession_table_query(context.benchmark.nwb_paths)
+            case "large_array":
+                answer = _large_array(context.benchmark.nwb_paths)
             case _:
                 raise ValueError(f"Unsupported benchmark question: {question.id}")
         context.submit_answer(question.id, answer)
@@ -251,7 +250,7 @@ def _get_unit_spike_times(units: Any, unit_index: int) -> np.ndarray:
     return np.asarray(units["spike_times"][start:stop], dtype=np.float64)
 
 
-def _mean_trial_length(nwb_paths: list[str]) -> float:
+def _multisession_table_query(nwb_paths: list[str]) -> float:
     """Compute the mean trial duration across all NWB stores."""
     total_duration = 0.0
     total_trials = 0
@@ -266,7 +265,7 @@ def _mean_trial_length(nwb_paths: list[str]) -> float:
     return total_duration / total_trials
 
 
-def _facemap_side_camera_download_mean(nwb_paths: list[str]) -> float:
+def _large_array(nwb_paths: list[str]) -> float:
     """Return the mean of a 6.6 MB facemap data block from the first NWB store."""
     if not nwb_paths:
         raise ValueError("At least one NWB path is required.")

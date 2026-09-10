@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Sequence
 from pathlib import Path
@@ -14,7 +15,14 @@ alt.data_transformers.disable_max_rows()
 
 logger = logging.getLogger(__name__)
 
-_LEADERBOARD_PLOT_MAX_SECONDS = 20.0
+_LEADERBOARD_SERIES_COLORS = [
+    "#059669",
+    "#d97706",
+    "#e11d48",
+    "#7c3aed",
+    "#0f766e",
+    "#2563eb",
+]
 _DASHBOARD_COLORS: dict[str, str] = {
     "timing": "#d97706",
     "memory": "#e11d48",
@@ -58,91 +66,166 @@ def _write_leaderboard_plot(
     if not rows:
         return
 
-    chart = _leaderboard_plot_chart(rows)
+    memory_rows, network_rows = _leaderboard_profile_rows(
+        results_dir=results_dir,
+        leaderboard_rows=rows,
+    )
+    chart = _leaderboard_plot_chart(
+        rows,
+        memory_profile_rows=memory_rows,
+        network_profile_rows=network_rows,
+    )
     _save_altair_chart(results_dir / "leaderboard.html", chart)
 
 
 def _leaderboard_plot_chart(
     rows: list[neurodatabench.models.JsonObject],
+    *,
+    memory_profile_rows: list[dict[str, object]] | None = None,
+    network_profile_rows: list[dict[str, object]] | None = None,
+) -> alt.VConcatChart:
+    """Return stage timing, memory, and network comparisons for all runs."""
+    timing_rows = _leaderboard_timing_rows(rows)
+    profile_series = list(
+        dict.fromkeys(str(row["profile_series"]) for row in timing_rows)
+    )
+    series_colors = [
+        _LEADERBOARD_SERIES_COLORS[index % len(_LEADERBOARD_SERIES_COLORS)]
+        for index in range(len(profile_series))
+    ]
+    timing_chart = _leaderboard_timing_chart(rows=rows, timing_rows=timing_rows)
+    memory_chart = _leaderboard_comparison_profile_chart(
+        title="Memory profile",
+        rows=memory_profile_rows or [],
+        y_field="memory_delta_mib",
+        y_title="MiB above baseline",
+        profile_series=profile_series,
+        series_colors=series_colors,
+    )
+    network_chart = _leaderboard_comparison_profile_chart(
+        title="Network profile (system received)",
+        rows=network_profile_rows or [],
+        y_field="network_received_mib",
+        y_title="MiB received since first sample",
+        profile_series=profile_series,
+        series_colors=series_colors,
+    )
+    return (
+        alt.vconcat(
+            timing_chart,
+            memory_chart,
+            network_chart,
+            spacing=14,
+        )
+        .resolve_scale(x="shared", color="independent")
+        .properties(
+            title=alt.TitleParams(text="NeuroDataBench Leaderboard", anchor="start")
+        )
+    )
+
+
+def _leaderboard_timing_rows(
+    rows: list[neurodatabench.models.JsonObject],
+) -> list[dict[str, object]]:
+    """Flatten persisted setup and per-answer segments for timing lanes."""
+    timing_rows: list[dict[str, object]] = []
+    for row in rows:
+        implementation_id = str(row.get("implementation_id", "unknown"))
+        nwb_format = str(row.get("nwb_format", "unknown"))
+        profile_series = f"{implementation_id} [{nwb_format}]"
+        segments = row.get("timing_segments")
+        if not isinstance(segments, list):
+            total_seconds = _leaderboard_number_at(row, "total_seconds") or 0.0
+            segments = [
+                {
+                    "stage": "total",
+                    "start_seconds": 0.0,
+                    "stop_seconds": total_seconds,
+                    "duration_seconds": total_seconds,
+                }
+            ]
+        for index, segment in enumerate(segments):
+            if not isinstance(segment, dict):
+                continue
+            start_seconds = _object_number_at(segment, "start_seconds")
+            stop_seconds = _object_number_at(segment, "stop_seconds")
+            duration_seconds = _object_number_at(segment, "duration_seconds")
+            if (
+                start_seconds is None
+                or stop_seconds is None
+                or duration_seconds is None
+            ):
+                continue
+            timing_rows.append(
+                {
+                    "leaderboard_label": str(row["leaderboard_label"]),
+                    "profile_series": profile_series,
+                    "implementation_id": implementation_id,
+                    "benchmark_id": str(row.get("benchmark_id", "unknown")),
+                    "run_status": str(row.get("run_status", "unknown")),
+                    "stage": str(segment.get("stage", "unknown")),
+                    "start_seconds": start_seconds,
+                    "stop_seconds": stop_seconds,
+                    "duration_seconds": duration_seconds,
+                    "timeout_label": (
+                        _timeout_label(row) if index == len(segments) - 1 else ""
+                    ),
+                }
+            )
+    return timing_rows
+
+
+def _leaderboard_timing_chart(
+    *,
+    rows: list[neurodatabench.models.JsonObject],
+    timing_rows: list[dict[str, object]],
 ) -> alt.LayerChart:
-    """Return the aggregate leaderboard chart with long runtimes capped."""
-    plot_rows = _leaderboard_plot_rows(rows)
-    y_sort = [str(row["leaderboard_label"]) for row in plot_rows]
+    """Return aligned timing lanes broken into setup and individual answers."""
+    y_sort = [str(row["leaderboard_label"]) for row in rows]
+    stage_order = list(dict.fromkeys(str(row["stage"]) for row in timing_rows))
+    stage_colors = [
+        _LEADERBOARD_SERIES_COLORS[index % len(_LEADERBOARD_SERIES_COLORS)]
+        for index in range(len(stage_order))
+    ]
     y_encoding = alt.Y(
         "leaderboard_label:N",
         title=None,
         sort=y_sort,
+        axis=alt.Axis(labelLimit=280),
     )
-    base = alt.Chart(alt.Data(values=plot_rows))
-    completed_chart = (
-        base.transform_filter("!datum.timed_out")
-        .mark_bar()
+    source = alt.Data(values=timing_rows)
+    bars = (
+        alt.Chart(source)
+        .mark_bar(size=15, stroke="#ffffff", strokeWidth=0.7)
         .encode(
-            x=alt.X(
-                "plot_total_seconds:Q",
-                title="total seconds (capped at 20 s)",
-                scale=alt.Scale(domain=[0.0, _LEADERBOARD_PLOT_MAX_SECONDS]),
-            ),
+            x=alt.X("start_seconds:Q", title="elapsed seconds"),
+            x2="stop_seconds:Q",
             y=y_encoding,
             color=alt.Color(
-                "benchmark_id:N",
-                title="benchmark",
-                scale=alt.Scale(
-                    range=[
-                        _DASHBOARD_COLORS["cpu_process"],
-                        _DASHBOARD_COLORS["timing"],
-                        _DASHBOARD_COLORS["memory"],
-                        _DASHBOARD_COLORS["cpu_system"],
-                        _DASHBOARD_COLORS["network_received"],
-                    ]
+                "stage:N",
+                title="stage",
+                scale=alt.Scale(domain=stage_order, range=stage_colors),
+                legend=alt.Legend(
+                    orient="bottom",
+                    direction="horizontal",
+                    columns=2,
+                    labelLimit=400,
                 ),
             ),
-            tooltip=_leaderboard_tooltips(include_timeout_seconds=False),
-        )
-    )
-    timeout_chart = (
-        base.transform_filter(alt.datum.timed_out)
-        .mark_bar()
-        .encode(
-            x=alt.X(
-                "plot_total_seconds:Q",
-                title="total seconds (capped at 20 s)",
-                scale=alt.Scale(domain=[0.0, _LEADERBOARD_PLOT_MAX_SECONDS]),
-            ),
-            y=y_encoding,
-            color=alt.Color(
-                "benchmark_id:N",
-                title="benchmark",
-                scale=alt.Scale(
-                    range=[
-                        _DASHBOARD_COLORS["cpu_process"],
-                        _DASHBOARD_COLORS["timing"],
-                        _DASHBOARD_COLORS["memory"],
-                        _DASHBOARD_COLORS["cpu_system"],
-                        _DASHBOARD_COLORS["network_received"],
-                    ]
-                ),
-            ),
-            tooltip=_leaderboard_tooltips(include_timeout_seconds=True),
-        )
-    )
-    truncated_labels = (
-        base.transform_filter(alt.datum.total_seconds_truncated)
-        .mark_text(
-            align="right",
-            baseline="middle",
-            color="#ffffff",
-            dx=-6,
-            fontSize=11,
-        )
-        .encode(
-            x=alt.X("plot_total_seconds:Q"),
-            y=y_encoding,
-            text=alt.Text("plot_total_seconds_label:N"),
+            tooltip=[
+                alt.Tooltip("implementation_id:N", title="Implementation"),
+                alt.Tooltip("benchmark_id:N", title="Benchmark"),
+                alt.Tooltip("run_status:N", title="Run status"),
+                alt.Tooltip("stage:N", title="Stage"),
+                alt.Tooltip("start_seconds:Q", title="Start", format=",.3f"),
+                alt.Tooltip("stop_seconds:Q", title="Stop", format=",.3f"),
+                alt.Tooltip("duration_seconds:Q", title="Duration", format=",.3f"),
+            ],
         )
     )
     timeout_labels = (
-        base.transform_filter(alt.datum.timed_out)
+        alt.Chart(source)
+        .transform_filter("datum.timeout_label !== ''")
         .mark_text(
             align="left",
             baseline="middle",
@@ -152,126 +235,163 @@ def _leaderboard_plot_chart(
             fontWeight="bold",
         )
         .encode(
-            x=alt.X("plot_total_seconds:Q"),
+            x=alt.X("stop_seconds:Q"),
             y=y_encoding,
-            text=alt.Text("timed_out_label:N"),
+            text=alt.Text("timeout_label:N"),
         )
     )
-    cap_rule = (
-        alt.Chart(
-            alt.Data(values=[{"cap_seconds": _LEADERBOARD_PLOT_MAX_SECONDS}])
-        )
-        .mark_rule(color="#374151", strokeDash=[5, 4], strokeWidth=1.5)
-        .encode(x=alt.X("cap_seconds:Q"))
-    )
-    return (
-        alt.layer(
-            completed_chart,
-            timeout_chart,
-            cap_rule,
-            truncated_labels,
-            timeout_labels,
-        )
-        .properties(
-            title=alt.TitleParams(
-                text="NeuroDataBench Leaderboard",
-                anchor="start",
-            ),
-            width=904,
-            height=max(90, min(28 * len(rows), 720)),
-        )
+    return alt.layer(bars, timeout_labels).properties(
+        title="Stage durations",
+        width=904,
+        height=max(120, min(30 * len(rows), 720)),
     )
 
 
-def _leaderboard_tooltips(
+def _leaderboard_comparison_profile_chart(
     *,
-    include_timeout_seconds: bool,
-) -> list[alt.Tooltip]:
-    """Return leaderboard tooltip fields for completed or timed-out bars."""
-    tooltips = [
-        alt.Tooltip("implementation_id:N", title="Implementation"),
-        alt.Tooltip("nwb_interface:N", title="NWB interface"),
-        alt.Tooltip("object_store_backend:N", title="Object store backend"),
-        alt.Tooltip("benchmark_id:N", title="Benchmark"),
-        alt.Tooltip("run_status:N", title="Run status"),
-        alt.Tooltip("datetime_utc:N", title="Run UTC"),
-        alt.Tooltip("local_cache:N", title="Local cache"),
-        alt.Tooltip("remote_cache:N", title="Remote cache"),
-        alt.Tooltip("total_seconds:Q", title="Total seconds", format=",.3f"),
-        alt.Tooltip("setup_seconds:Q", title="Setup seconds", format=",.3f"),
-        alt.Tooltip(
-            "submit_answers_seconds:Q",
-            title="Submit seconds",
-            format=",.3f",
-        ),
-        alt.Tooltip(
-            "peak_rss_delta_mib:Q",
-            title="Peak RSS delta MiB",
-            format=",.1f",
-        ),
-        alt.Tooltip(
-            "peak_rss_mib:Q",
-            title="Raw peak RSS MiB",
-            format=",.1f",
-        ),
-        alt.Tooltip(
-            "network_received_mib:Q",
-            title="Network received MiB",
-            format=",.1f",
-        ),
-    ]
-    if include_timeout_seconds:
-        tooltips.insert(
-            5,
-            alt.Tooltip(
-                "timeout_seconds:Q",
-                title="Timeout seconds",
-                format=",.3f",
+    title: str,
+    rows: list[dict[str, object]],
+    y_field: str,
+    y_title: str,
+    profile_series: list[str],
+    series_colors: list[str],
+) -> alt.Chart:
+    """Return one resource axis containing every implementation trace."""
+    return (
+        alt.Chart(alt.Data(values=rows))
+        .mark_line()
+        .encode(
+            x=alt.X("elapsed_seconds:Q", title="elapsed seconds"),
+            y=alt.Y(f"{y_field}:Q", title=y_title),
+            color=alt.Color(
+                "profile_series:N",
+                title="implementation [format]",
+                scale=alt.Scale(domain=profile_series, range=series_colors),
+                legend=alt.Legend(labelLimit=350),
             ),
+            tooltip=[
+                alt.Tooltip("profile_series:N", title="Implementation"),
+                alt.Tooltip(
+                    "elapsed_seconds:Q", title="Elapsed seconds", format=",.3f"
+                ),
+                alt.Tooltip(f"{y_field}:Q", title=y_title, format=",.3f"),
+            ],
         )
-    return tooltips
-
-
-def _leaderboard_plot_rows(
-    rows: list[neurodatabench.models.JsonObject],
-) -> list[neurodatabench.models.JsonObject]:
-    """Return chart rows with capped display seconds and truncation labels."""
-    plot_rows: list[neurodatabench.models.JsonObject] = []
-    for row in rows:
-        plot_row = dict(row)
-        total_seconds = _leaderboard_number_at(row, "total_seconds") or 0.0
-        is_truncated = total_seconds > _LEADERBOARD_PLOT_MAX_SECONDS
-        timed_out = _leaderboard_timed_out(row)
-        timeout_seconds = _leaderboard_number_at(row, "timeout_seconds")
-        plot_row["total_seconds"] = total_seconds
-        plot_row["plot_total_seconds"] = min(
-            total_seconds,
-            _LEADERBOARD_PLOT_MAX_SECONDS,
-        )
-        plot_row["run_status"] = row.get("run_status") or (
-            "timed out" if timed_out else "correct"
-        )
-        plot_row["timed_out"] = timed_out
-        plot_row["timed_out_label"] = "timed out" if timed_out else ""
-        if not timed_out:
-            plot_row.pop("timeout_seconds", None)
-        elif timeout_seconds is not None:
-            plot_row["timeout_seconds"] = timeout_seconds
-        plot_row["total_seconds_truncated"] = is_truncated
-        plot_row["plot_total_seconds_label"] = (
-            f"{total_seconds:,.1f} s" if is_truncated else ""
-        )
-        plot_rows.append(plot_row)
-    return sorted(
-        plot_rows,
-        key=lambda row: (
-            str(row.get("benchmark_id", "")),
-            _leaderboard_number_at(row, "total_seconds") or 0.0,
-            str(row.get("implementation_id", "")),
-            str(row.get("datetime_utc", "")),
-            str(row.get("result_dir", "")),
-        ),
+        .properties(title=title, width=904, height=190)
     )
+
+
+def _leaderboard_profile_rows(
+    *,
+    results_dir: Path,
+    leaderboard_rows: list[neurodatabench.models.JsonObject],
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    """Load per-run samples as shared memory and network profile rows."""
+    memory_rows: list[dict[str, object]] = []
+    network_rows: list[dict[str, object]] = []
+    for leaderboard_row in leaderboard_rows:
+        run_dir = results_dir / str(leaderboard_row["result_dir"])
+        samples = _read_jsonl_objects(run_dir / "profile_samples.jsonl")
+        if not samples:
+            continue
+        profile_summary = _read_json_object(run_dir / "profile_summary.json") or {}
+        profile_series = (
+            f"{leaderboard_row['implementation_id']} "
+            f"[{leaderboard_row['nwb_format']}]"
+        )
+        sample_times = [
+            time_ns
+            for sample in samples
+            for time_ns in [_json_number_at(sample, ("time_ns",))]
+            if time_ns is not None
+        ]
+        if not sample_times:
+            continue
+        first_time_ns = min(sample_times)
+        baseline_rss = _json_number_at(
+            profile_summary,
+            ("baseline_process_plus_children_rss_bytes",),
+        )
+        baseline_received: float | None = None
+        for sample in samples:
+            time_ns = _json_number_at(sample, ("time_ns",))
+            if time_ns is None:
+                continue
+            elapsed_seconds = max(0.0, (time_ns - first_time_ns) / 1_000_000_000)
+            process_rss = _json_number_at(sample, ("process", "rss_bytes"))
+            child_rss = _json_number_at(sample, ("children", "rss_bytes")) or 0.0
+            if process_rss is not None:
+                total_rss = process_rss + child_rss
+                if baseline_rss is None:
+                    baseline_rss = total_rss
+                memory_rows.append(
+                    {
+                        "profile_series": profile_series,
+                        "elapsed_seconds": elapsed_seconds,
+                        "memory_delta_mib": max(total_rss - baseline_rss, 0.0)
+                        / 1_048_576,
+                    }
+                )
+            bytes_received = _json_number_at(sample, ("io", "net", "bytes_recv"))
+            if bytes_received is not None:
+                if baseline_received is None:
+                    baseline_received = bytes_received
+                network_rows.append(
+                    {
+                        "profile_series": profile_series,
+                        "elapsed_seconds": elapsed_seconds,
+                        "network_received_mib": max(
+                            bytes_received - baseline_received,
+                            0.0,
+                        )
+                        / 1_048_576,
+                    }
+                )
+    return memory_rows, network_rows
+
+
+def _read_jsonl_objects(path: Path) -> list[neurodatabench.models.JsonObject]:
+    """Return valid JSON object rows from a JSON Lines artifact."""
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    rows: list[neurodatabench.models.JsonObject] = []
+    for line in lines:
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            rows.append(value)
+    return rows
+
+
+def _read_json_object(path: Path) -> neurodatabench.models.JsonObject | None:
+    """Return one JSON object artifact when it is readable."""
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _object_number_at(value: dict[str, object], key: str) -> float | None:
+    """Return a JSON-like numeric dictionary field."""
+    item = value.get(key)
+    if isinstance(item, bool) or not isinstance(item, (int, float)):
+        return None
+    return float(item)
+
+
+def _timeout_label(row: neurodatabench.models.JsonObject) -> str:
+    """Return the visible truncation label for one timing lane."""
+    if not _leaderboard_timed_out(row):
+        return ""
+    timeout_seconds = _leaderboard_number_at(row, "timeout_seconds")
+    if timeout_seconds is None:
+        return "timed out"
+    return f"truncated at {timeout_seconds:g} s"
 
 
 def _leaderboard_timed_out(row: neurodatabench.models.JsonObject) -> bool:
@@ -320,33 +440,35 @@ def _result_dashboard_chart(
         profile_samples=profile_samples,
         run_start_wall_time_ns=run_start_wall_time_ns,
     )
-    dashboard = alt.vconcat(
-        _timing_summary_chart(timings, time_domain=time_domain),
-        _network_profile_chart(
-            profile_samples=profile_samples,
-            timings=timings,
-            run_start_wall_time_ns=run_start_wall_time_ns,
-            time_domain=time_domain,
-        ),
-        _memory_profile_chart(
-            profile_samples=profile_samples,
-            profile_summary=profile_summary,
-            timings=timings,
-            run_start_wall_time_ns=run_start_wall_time_ns,
-            time_domain=time_domain,
-        ),
-        _cpu_profile_chart(
-            profile_samples=profile_samples,
-            timings=timings,
-            run_start_wall_time_ns=run_start_wall_time_ns,
-            time_domain=time_domain,
-        ),
-        spacing=10,
-    ).resolve_scale(
-        x="shared",
-        color="independent",
-    ).properties(
-        title=_dashboard_title(metadata)
+    dashboard = (
+        alt.vconcat(
+            _timing_summary_chart(timings, time_domain=time_domain),
+            _network_profile_chart(
+                profile_samples=profile_samples,
+                timings=timings,
+                run_start_wall_time_ns=run_start_wall_time_ns,
+                time_domain=time_domain,
+            ),
+            _memory_profile_chart(
+                profile_samples=profile_samples,
+                profile_summary=profile_summary,
+                timings=timings,
+                run_start_wall_time_ns=run_start_wall_time_ns,
+                time_domain=time_domain,
+            ),
+            _cpu_profile_chart(
+                profile_samples=profile_samples,
+                timings=timings,
+                run_start_wall_time_ns=run_start_wall_time_ns,
+                time_domain=time_domain,
+            ),
+            spacing=10,
+        )
+        .resolve_scale(
+            x="shared",
+            color="independent",
+        )
+        .properties(title=_dashboard_title(metadata))
     )
     return dashboard
 
@@ -541,8 +663,7 @@ def _submit_answer_timing_rows(
                 "segment": "after final submission",
                 "start_seconds": previous_stop_seconds,
                 "stop_seconds": phase_timing.stop_seconds,
-                "duration_seconds": phase_timing.stop_seconds
-                - previous_stop_seconds,
+                "duration_seconds": phase_timing.stop_seconds - previous_stop_seconds,
             }
         )
     return rows
@@ -728,7 +849,9 @@ def _profile_line_chart(
                 title=None,
             ),
             tooltip=[
-                alt.Tooltip("elapsed_seconds:Q", title="Elapsed seconds", format=",.3f"),
+                alt.Tooltip(
+                    "elapsed_seconds:Q", title="Elapsed seconds", format=",.3f"
+                ),
                 alt.Tooltip("metric:N", title="Metric"),
                 alt.Tooltip(f"{y_field}:Q", title=y_title, format=",.3f"),
             ],
@@ -770,7 +893,9 @@ def _annotate_profile_chart(
             tooltip=[
                 alt.Tooltip("event:N", title="Event"),
                 alt.Tooltip("detail:N", title="Detail"),
-                alt.Tooltip("elapsed_seconds:Q", title="Elapsed seconds", format=",.3f"),
+                alt.Tooltip(
+                    "elapsed_seconds:Q", title="Elapsed seconds", format=",.3f"
+                ),
             ],
         )
     )
@@ -785,8 +910,7 @@ def _elapsed_time_domain(
 ) -> tuple[float, float]:
     """Return the shared elapsed-time domain for all dashboard panes."""
     elapsed_values = [
-        max(0.0, phase_timing.stop_seconds)
-        for phase_timing in timings.phase_timings
+        max(0.0, phase_timing.stop_seconds) for phase_timing in timings.phase_timings
     ]
     elapsed_values.extend(
         elapsed_seconds
@@ -834,7 +958,9 @@ def _save_altair_chart(path: Path, chart: alt.TopLevelMixin) -> None:
     chart.configure_axis(
         labelColor="#4b5563",
         titleColor="#374151",
-    ).configure_view(stroke=None).save(path.as_posix())
+    ).configure_view(
+        stroke=None
+    ).save(path.as_posix())
 
 
 def _profile_samples_with_elapsed_time(

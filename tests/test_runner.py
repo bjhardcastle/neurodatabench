@@ -5,11 +5,11 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
 import unittest.mock
-import zipfile
 from datetime import datetime
 from pathlib import Path
 
@@ -31,7 +31,9 @@ class RunnerTests(unittest.TestCase):
         self.assertTrue(hasattr(neurodatabench, "validation"))
         self.assertIs(neurodatabench.RunContext, neurodatabench.models.RunContext)
         self.assertIs(neurodatabench.Benchmark, neurodatabench.models.Benchmark)
-        self.assertIs(neurodatabench.RunPhaseTiming, neurodatabench.models.RunPhaseTiming)
+        self.assertIs(
+            neurodatabench.RunPhaseTiming, neurodatabench.models.RunPhaseTiming
+        )
         self.assertIs(
             neurodatabench.BenchmarkValidationError,
             neurodatabench.validation.BenchmarkValidationError,
@@ -85,7 +87,7 @@ class RunnerTests(unittest.TestCase):
             self.assertFalse((out_dir / "memory_profile.html").exists())
             self.assertFalse((out_dir / "cpu_profile.html").exists())
             self.assertTrue((out_dir / "requirements.txt").exists())
-            self.assertTrue((out_dir / "results_bundle.zip").exists())
+            self.assertFalse((out_dir / "results_bundle.zip").exists())
             self.assertFalse((out_dir / "answers.jsonl").exists())
             self.assertRegex(
                 "\n".join(logs.output),
@@ -144,14 +146,6 @@ class RunnerTests(unittest.TestCase):
                 datetime.fromisoformat(row["submitted_at"])
                 self.assertIsInstance(row["submitted_elapsed_seconds"], float)
                 self.assertGreaterEqual(row["submitted_elapsed_seconds"], 0.0)
-
-            with zipfile.ZipFile(out_dir / "results_bundle.zip") as bundle:
-                bundle_names = set(bundle.namelist())
-            self.assertIn("dashboard.html", bundle_names)
-            self.assertIn("implementation.py", bundle_names)
-            self.assertNotIn("timing_summary.html", bundle_names)
-            self.assertNotIn("memory_profile.html", bundle_names)
-            self.assertNotIn("cpu_profile.html", bundle_names)
 
     def test_local_cache_false_is_rejected(self) -> None:
         """False is not a valid local cache metadata state."""
@@ -236,7 +230,9 @@ class RunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             benchmark_path = Path(tmpdir) / "custom.json"
             benchmark_path.write_text(
-                json.dumps(_benchmark_json("custom", [{"id": "q", "text": "Q", "answer": 1}])),
+                json.dumps(
+                    _benchmark_json("custom", [{"id": "q", "text": "Q", "answer": 1}])
+                ),
                 encoding="utf-8",
             )
 
@@ -262,11 +258,17 @@ class RunnerTests(unittest.TestCase):
             self.assertTrue(validation["correct"])
 
     def test_main_uses_default_output_directory(self) -> None:
-        """A run should create a named timestamped result dir when out is omitted."""
+        """A run should write beside its implementation file when out is omitted."""
         with tempfile.TemporaryDirectory() as tmpdir:
             benchmark_path = Path(tmpdir) / "custom.json"
+            implementation_dir = Path(tmpdir) / "implementation-run"
+            implementation_dir.mkdir()
+            implementation_path = implementation_dir / "implementation.py"
+            implementation_path.write_text("", encoding="utf-8")
             benchmark_path.write_text(
-                json.dumps(_benchmark_json("custom", [{"id": "q", "text": "Q", "answer": 1}])),
+                json.dumps(
+                    _benchmark_json("custom", [{"id": "q", "text": "Q", "answer": 1}])
+                ),
                 encoding="utf-8",
             )
 
@@ -277,41 +279,30 @@ class RunnerTests(unittest.TestCase):
                 """Submit the expected answer."""
                 context.submit_answer("q", 1)
 
-            previous_cwd = Path.cwd()
-            try:
-                os.chdir(tmpdir)
-                neurodatabench.runner.main(
-                    implementation_id="default-out-test",
-                    implementation_local_cache=None,
-                    implementation_remote_cache=False,
-                    benchmark=benchmark_path,
-                    setup=setup,
-                    submit_answers=submit_answers,
-                    argv=(),
-                )
-            finally:
-                os.chdir(previous_cwd)
+            neurodatabench.runner.main(
+                implementation_id="default-out-test",
+                implementation_local_cache=None,
+                implementation_remote_cache=False,
+                benchmark=benchmark_path,
+                implementation_script=implementation_path,
+                setup=setup,
+                submit_answers=submit_answers,
+                argv=(),
+            )
 
-            result_dirs = sorted(
-                path for path in (Path(tmpdir) / "results").iterdir() if path.is_dir()
-            )
-            self.assertEqual(len(result_dirs), 1)
-            self.assertRegex(
-                result_dirs[0].name,
-                r"^default-out-test_custom_\d{8}T\d{6}Z$",
-            )
-            self.assertTrue((Path(tmpdir) / "results" / "leaderboard.json").exists())
-            self.assertTrue((Path(tmpdir) / "results" / "leaderboard.csv").exists())
-            self.assertTrue((Path(tmpdir) / "results" / "leaderboard.html").exists())
-            validation = _read_json(result_dirs[0] / "validation.json")
+            validation = _read_json(implementation_dir / "validation.json")
             self.assertTrue(validation["correct"])
+            self.assertTrue((implementation_dir / "dashboard.html").exists())
+            self.assertFalse((Path(tmpdir) / "results").exists())
 
     def test_results_leaderboard_updates_for_successful_runs(self) -> None:
         """Runs under a results directory should refresh aggregate leaderboard files."""
         with tempfile.TemporaryDirectory() as tmpdir:
             benchmark_path = Path(tmpdir) / "custom.json"
             benchmark_path.write_text(
-                json.dumps(_benchmark_json("custom", [{"id": "q", "text": "Q", "answer": 1}])),
+                json.dumps(
+                    _benchmark_json("custom", [{"id": "q", "text": "Q", "answer": 1}])
+                ),
                 encoding="utf-8",
             )
             results_dir = Path(tmpdir) / "results"
@@ -357,7 +348,9 @@ class RunnerTests(unittest.TestCase):
                 (results_dir / "leaderboard.json").read_text(encoding="utf-8")
             )
             self.assertIsInstance(leaderboard, list)
-            self.assertEqual([row["implementation_id"] for row in leaderboard], ["fast", "slow"])
+            self.assertEqual(
+                [row["implementation_id"] for row in leaderboard], ["fast", "slow"]
+            )
             self.assertEqual(
                 [row["nwb_interface"] for row in leaderboard],
                 ["lazynwb", "pynwb"],
@@ -381,9 +374,81 @@ class RunnerTests(unittest.TestCase):
             self.assertNotIn("rank", leaderboard_csv.splitlines()[0])
             self.assertNotIn("timed_out", leaderboard_csv.splitlines()[0])
             self.assertNotIn("timeout_seconds", leaderboard_csv.splitlines()[0])
-            self.assertTrue(
-                all("peak_rss_delta_mib" in row for row in leaderboard)
+            self.assertTrue(all("peak_rss_delta_mib" in row for row in leaderboard))
+
+    def test_timed_out_leaderboard_row_allows_missing_phase_timings(self) -> None:
+        """Killed runs should not need invented setup or submission durations."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_dir = Path(tmpdir) / "timeout-run"
+            run_dir.mkdir()
+            artifacts = {
+                "run_metadata.json": {
+                    "datetime_utc": "2026-09-10T00:00:00Z",
+                    "timed_out": True,
+                    "timeout_seconds": 120,
+                    "implementation": {"id": "slow", "nwb_interface": "pynwb"},
+                    "benchmark": {"id": "benchmark", "nwb_format": "hdf5"},
+                },
+                "timings.json": {"total_duration_ns": 120_500_000_000},
+                "validation.json": {"correct": False, "timed_out": True},
+                "profile_summary.json": {},
+            }
+            for filename, value in artifacts.items():
+                (run_dir / filename).write_text(json.dumps(value), encoding="utf-8")
+
+            row = neurodatabench.runner._leaderboard_row(run_dir)
+
+            self.assertIsNotNone(row)
+            assert row is not None
+            self.assertEqual(row["total_seconds"], 120.5)
+            self.assertIsNone(row["setup_seconds"])
+            self.assertIsNone(row["submit_answers_seconds"])
+            self.assertTrue(row["timed_out"])
+            self.assertEqual(
+                row["timing_segments"],
+                [
+                    {
+                        "stage": "truncated (stage unknown)",
+                        "start_seconds": 0.0,
+                        "stop_seconds": 120.5,
+                        "duration_seconds": 120.5,
+                    }
+                ],
             )
+
+    def test_leaderboard_timing_segments_split_each_answer(self) -> None:
+        """Completed timing lanes should expose setup and every answer duration."""
+        timings = {
+            "phase_timings": [
+                {
+                    "phase": "setup",
+                    "start_seconds": 0.0,
+                    "stop_seconds": 2.0,
+                    "duration_seconds": 2.0,
+                },
+                {
+                    "phase": "submit_answers",
+                    "start_seconds": 2.0,
+                    "stop_seconds": 9.0,
+                    "duration_seconds": 7.0,
+                },
+            ],
+            "answer_submissions": [
+                {"question_id": "first", "submitted_elapsed_seconds": 5.0},
+                {"question_id": "second", "submitted_elapsed_seconds": 8.5},
+            ],
+        }
+
+        segments = neurodatabench.runner._leaderboard_timing_segments(
+            timings,
+            timed_out=False,
+            total_seconds=9.0,
+        )
+
+        self.assertEqual(
+            [segment["stage"] for segment in segments], ["setup", "first", "second"]
+        )
+        self.assertEqual(segments[-1]["duration_seconds"], 4.0)
 
     def test_cli_args_override_call_defaults(self) -> None:
         """Settings CLI overrides should replace benchmark and output defaults."""
@@ -392,11 +457,19 @@ class RunnerTests(unittest.TestCase):
             override_path = Path(tmpdir) / "override.json"
             override_out = Path(tmpdir) / "override-results"
             default_path.write_text(
-                json.dumps(_benchmark_json("default", [{"id": "default", "text": "Q", "answer": 0}])),
+                json.dumps(
+                    _benchmark_json(
+                        "default", [{"id": "default", "text": "Q", "answer": 0}]
+                    )
+                ),
                 encoding="utf-8",
             )
             override_path.write_text(
-                json.dumps(_benchmark_json("override", [{"id": "override", "text": "Q", "answer": 7}])),
+                json.dumps(
+                    _benchmark_json(
+                        "override", [{"id": "override", "text": "Q", "answer": 7}]
+                    )
+                ),
                 encoding="utf-8",
             )
 
@@ -469,21 +542,18 @@ class RunnerTests(unittest.TestCase):
                 default_benchmark="dynamic_routing_zarr_v0",
                 default_out=None,
                 default_log_level=None,
-                implementation_id="test-implementation",
                 argv=(),
             )
             call_config = neurodatabench.runner._resolve_config(
                 default_benchmark="dynamic_routing_zarr_v0",
                 default_out=None,
                 default_log_level="info",
-                implementation_id="test-implementation",
                 argv=(),
             )
             cli_config = neurodatabench.runner._resolve_config(
                 default_benchmark="dynamic_routing_zarr_v0",
                 default_out=None,
                 default_log_level="info",
-                implementation_id="test-implementation",
                 argv=("--log-level", "debug"),
             )
 
@@ -498,7 +568,6 @@ class RunnerTests(unittest.TestCase):
                 default_benchmark="dynamic_routing_zarr_v0",
                 default_out=None,
                 default_log_level=None,
-                implementation_id="test-implementation",
                 argv=(),
             )
             call_config = neurodatabench.runner._resolve_config(
@@ -506,7 +575,6 @@ class RunnerTests(unittest.TestCase):
                 default_out=None,
                 default_log_level=None,
                 default_fail_fast=False,
-                implementation_id="test-implementation",
                 argv=(),
             )
             cli_config = neurodatabench.runner._resolve_config(
@@ -514,7 +582,6 @@ class RunnerTests(unittest.TestCase):
                 default_out=None,
                 default_log_level=None,
                 default_fail_fast=False,
-                implementation_id="test-implementation",
                 argv=("--fail-fast",),
             )
 
@@ -565,6 +632,7 @@ class RunnerTests(unittest.TestCase):
 
     def test_supervised_timeout_reports_actual_elapsed_seconds(self) -> None:
         """Timeout message should report actual elapsed supervisor duration."""
+
         class FakeProcess:
             """Subprocess test double that times out once, then exits after kill."""
 
@@ -612,6 +680,7 @@ class RunnerTests(unittest.TestCase):
 
     def test_supervised_timeout_kills_process_tree(self) -> None:
         """Timeout cleanup should kill the uv process and descendants."""
+
         class FakePsutilProcess:
             """psutil.Process test double with recursive children."""
 
@@ -667,6 +736,28 @@ class RunnerTests(unittest.TestCase):
         self.assertTrue(popen.waited)
         wait_procs.assert_called_once_with([child, parent], timeout=5.0)
 
+    def test_supervised_timeout_persists_resource_profile(self) -> None:
+        """Supervisor-owned samples should survive termination of the child."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            profile_out = Path(tmpdir) / "timeout-result"
+            with (
+                self.assertLogs("neurodatabench.runner", level="ERROR"),
+                self.assertRaises(SystemExit),
+            ):
+                neurodatabench.runner._run_supervised_command(
+                    [sys.executable, "-c", "import time; time.sleep(5)"],
+                    timeout_seconds=0.25,
+                    timeout_profile_out=profile_out,
+                )
+
+            samples = (profile_out / "profile_samples.jsonl").read_text(
+                encoding="utf-8"
+            )
+            summary = _read_json(profile_out / "profile_summary.json")
+            self.assertTrue(samples.strip())
+            self.assertGreaterEqual(summary["num_samples"], 1)
+            self.assertEqual(summary["profiler_scope"], "supervised_process_tree")
+
     def test_invalid_log_level_raises(self) -> None:
         """Invalid log levels should fail during settings validation."""
         with self.assertRaises(pydantic.ValidationError):
@@ -674,7 +765,6 @@ class RunnerTests(unittest.TestCase):
                 default_benchmark="dynamic_routing_zarr_v0",
                 default_out=None,
                 default_log_level="verbose",
-                implementation_id="test-implementation",
                 argv=(),
             )
 
@@ -757,7 +847,7 @@ class RunnerTests(unittest.TestCase):
                     setup=setup,
                     submit_answers=submit_answers,
                     argv=(),
-            )
+                )
             message = str(error.exception)
             self.assertIn(
                 "Benchmark answers failed validation:",
@@ -908,7 +998,11 @@ class RunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             benchmark_path = Path(tmpdir) / "bad-user-code.json"
             benchmark_path.write_text(
-                json.dumps(_benchmark_json("bad-user-code", [{"id": "q", "text": "Q", "answer": 1}])),
+                json.dumps(
+                    _benchmark_json(
+                        "bad-user-code", [{"id": "q", "text": "Q", "answer": 1}]
+                    )
+                ),
                 encoding="utf-8",
             )
 

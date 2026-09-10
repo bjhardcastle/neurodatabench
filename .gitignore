@@ -1,4 +1,4 @@
-results/
+results*/
 .pytest_cache/
 .venv/
 __pycache__/

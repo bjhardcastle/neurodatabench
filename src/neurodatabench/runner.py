@@ -10,7 +10,6 @@ import importlib.resources
 import inspect
 import json
 import logging
-import os
 import platform
 import shutil
 import socket
@@ -18,16 +17,15 @@ import subprocess
 import sys
 import threading
 import time
-import zipfile
 from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter_ns
 from typing import Any
 
+import psutil
 import pydantic
 import pydantic_settings
-import psutil
 
 import neurodatabench.benchmarks
 import neurodatabench.models
@@ -80,13 +78,18 @@ class _RunConfig(pydantic_settings.BaseSettings):
 class _Profiler:
     """Background sampler for process and system resource usage."""
 
-    def __init__(self, interval_seconds: float) -> None:
+    def __init__(
+        self,
+        interval_seconds: float,
+        *,
+        process: psutil.Process | None = None,
+    ) -> None:
         """Create a profiler with a sampling interval in seconds."""
         self.interval_seconds = interval_seconds
         self.samples: list[neurodatabench.models.JsonObject] = []
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
-        self._process = psutil.Process()
+        self._process = psutil.Process() if process is None else process
         self._net_start: Any = None
         self._net_end: Any = None
         self._disk_start: Any = None
@@ -111,7 +114,9 @@ class _Profiler:
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout=2.0)
-        self.samples.append(self._sample())
+        final_sample = self._sample()
+        if final_sample is not None:
+            self.samples.append(final_sample)
         self._net_end = psutil.net_io_counters()
         self._disk_end = psutil.disk_io_counters()
 
@@ -155,7 +160,11 @@ class _Profiler:
 
     def _record_memory_baseline(self) -> None:
         """Record the process RSS baseline before measured setup starts."""
-        process_rss = self._process.memory_info().rss
+        try:
+            process_rss = self._process.memory_info().rss
+        except psutil.Error:
+            logger.debug("Profiled process vanished before memory baseline capture.")
+            return
         child_rss = _child_rss_bytes(self._process)
         self._baseline_process_rss_bytes = process_rss
         self._baseline_process_plus_children_rss_bytes = process_rss + child_rss
@@ -163,12 +172,20 @@ class _Profiler:
     def _run(self) -> None:
         """Collect samples until stopped."""
         while not self._stop.is_set():
-            self.samples.append(self._sample())
+            sample = self._sample()
+            if sample is not None:
+                self.samples.append(sample)
             self._stop.wait(self.interval_seconds)
 
-    def _sample(self) -> neurodatabench.models.JsonObject:
+    def _sample(self) -> neurodatabench.models.JsonObject | None:
         """Collect one profiler sample."""
-        memory = self._process.memory_info()
+        try:
+            memory = self._process.memory_info()
+            process_cpu_percent = self._process.cpu_percent(interval=None)
+            process_num_threads = self._process.num_threads()
+        except psutil.Error:
+            logger.debug("Skipping sample after profiled process exited.")
+            return None
         child_rss = 0
         child_cpu = 0.0
         for child in self._process.children(recursive=True):
@@ -181,10 +198,10 @@ class _Profiler:
         return {
             "time_ns": time.time_ns(),
             "process": {
-                "cpu_percent": self._process.cpu_percent(interval=None),
+                "cpu_percent": process_cpu_percent,
                 "rss_bytes": memory.rss,
                 "vms_bytes": memory.vms,
-                "num_threads": self._process.num_threads(),
+                "num_threads": process_num_threads,
             },
             "children": {
                 "cpu_percent": child_cpu,
@@ -236,7 +253,6 @@ def main(
         default_implementation_script=implementation_script,
         default_log_level=log_level,
         default_fail_fast=fail_fast,
-        implementation_id=implementation.id,
         argv=argv,
     )
     _configure_logging(config.log_level)
@@ -246,15 +262,18 @@ def main(
             "not for benchmark runs."
         )
     benchmark_source = config.benchmark
-    out_dir = config.out
     assert benchmark_source is not None
-    assert out_dir is not None
 
     raw_benchmark, loaded_benchmark = _load_benchmark(benchmark_source)
     implementation_script_path = _resolve_implementation_script_path(
         config.implementation_script,
         setup=setup,
         submit_answers=submit_answers,
+    )
+    out_dir = (
+        config.out
+        if config.out is not None
+        else _default_output_dir(implementation_script_path=implementation_script_path)
     )
     submitted_answers: list[dict[str, Any]] = []
     run_start_ns: int | None = None
@@ -342,8 +361,7 @@ def main(
             if current_phase == "setup" and current_phase_start_ns is not None:
                 setup_duration_ns = now_ns - current_phase_start_ns
             elif (
-                current_phase == "submit_answers"
-                and current_phase_start_ns is not None
+                current_phase == "submit_answers" and current_phase_start_ns is not None
             ):
                 submit_answers_duration_ns = now_ns - current_phase_start_ns
         profiler.stop()
@@ -412,7 +430,6 @@ def _resolve_config(
     default_benchmark: str | Path | None,
     default_out: str | Path | None,
     default_log_level: str | None,
-    implementation_id: str,
     argv: Sequence[str] | None,
     default_fail_fast: bool | None = None,
     default_implementation_script: str | Path | None = None,
@@ -437,27 +454,16 @@ def _resolve_config(
     )
     if config.benchmark is None:
         raise ValueError("benchmark must be provided to main() or --benchmark")
-    if config.out is None:
-        config.out = _default_output_dir(
-            implementation_id=implementation_id,
-            benchmark=config.benchmark,
-        )
     return config
 
 
-def _default_output_dir(*, implementation_id: str, benchmark: str) -> Path:
-    """Return the default result directory for an implementation/benchmark run."""
-    benchmark_name = _benchmark_name_for_path(benchmark)
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    return Path("results") / f"{implementation_id}_{benchmark_name}_{timestamp}"
-
-
-def _benchmark_name_for_path(benchmark: str) -> str:
-    """Return a filesystem-safe benchmark name for output path defaults."""
-    path = Path(benchmark)
-    if path.suffix == ".json":
-        return path.stem
-    return path.name
+def _default_output_dir(*, implementation_script_path: Path | None) -> Path:
+    """Return the implementation file's parent as the default output directory."""
+    if implementation_script_path is None:
+        raise ValueError(
+            "out must be provided when the implementation script path cannot be inferred"
+        )
+    return implementation_script_path.parent
 
 
 def _configure_logging(log_level: str) -> None:
@@ -513,6 +519,14 @@ def _cli(argv: Sequence[str] | None = None) -> int:
         help="Disable process-level timeout enforcement.",
     )
     supervise_parser.add_argument(
+        "--timeout-profile-out",
+        type=Path,
+        help=(
+            "Write profile samples and a summary here when the command is "
+            "terminated by the supervisor timeout."
+        ),
+    )
+    supervise_parser.add_argument(
         "command",
         nargs=argparse.REMAINDER,
         help="Command to run after '--'.",
@@ -530,7 +544,11 @@ def _cli(argv: Sequence[str] | None = None) -> int:
             )
         except ValueError as error:
             supervise_parser.error(str(error))
-        return _run_supervised_command(command, timeout_seconds=timeout_seconds)
+        return _run_supervised_command(
+            command,
+            timeout_seconds=timeout_seconds,
+            timeout_profile_out=args.timeout_profile_out,
+        )
     parser.error(f"unsupported command: {args.command_name}")
 
 
@@ -574,21 +592,50 @@ def _run_supervised_command(
     command: Sequence[str],
     *,
     timeout_seconds: float | None,
+    timeout_profile_out: Path | None = None,
 ) -> int:
     """Run a subprocess and kill it if the process-level timeout expires."""
     logger.debug("Starting supervised command: %s", " ".join(command))
     started = time.monotonic()
     process = subprocess.Popen(command)
+    profiler = (
+        None
+        if timeout_profile_out is None
+        else _Profiler(interval_seconds=0.25, process=psutil.Process(process.pid))
+    )
+    if profiler is not None:
+        profiler.start()
     try:
-        return int(process.wait(timeout=timeout_seconds))
+        return_code = int(process.wait(timeout=timeout_seconds))
+        if profiler is not None:
+            profiler.stop()
+        return return_code
     except subprocess.TimeoutExpired:
         logger.debug("Killing supervised command after timeout.")
+        if profiler is not None:
+            profiler.stop()
         _kill_process_tree(process)
         elapsed_seconds = time.monotonic() - started
+        if profiler is not None and timeout_profile_out is not None:
+            _write_timeout_profile_artifacts(
+                out_dir=timeout_profile_out,
+                profiler=profiler,
+            )
         logger.error("Benchmark timed out at %.3f seconds.", elapsed_seconds)
         raise SystemExit(
             f"Benchmark timed out at {elapsed_seconds:g} seconds"
         ) from None
+
+
+def _write_timeout_profile_artifacts(*, out_dir: Path, profiler: _Profiler) -> None:
+    """Persist supervisor-owned resource data after terminating a timed-out run."""
+    logger.debug("Writing timeout profile artifacts to %s.", out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    summary = profiler.summary()
+    summary["profiler_scope"] = "supervised_process_tree"
+    _write_jsonl(out_dir / "profile_samples.jsonl", profiler.samples)
+    _write_json(out_dir / "profile_summary.json", summary)
+    _update_results_leaderboard(out_dir)
 
 
 def _kill_process_tree(process: subprocess.Popen[object]) -> None:
@@ -802,7 +849,6 @@ def _write_result_artifacts(
         _environment_requirements_text(),
         encoding="utf-8",
     )
-    _write_bundle(out_dir)
     _update_results_leaderboard(out_dir)
 
 
@@ -892,10 +938,10 @@ def _leaderboard_row(run_dir: Path) -> neurodatabench.models.JsonObject | None:
         timings,
         ("submit_answers_duration_ns",),
     )
-    if (
-        total_duration_ns is None
-        or setup_duration_ns is None
-        or submit_answers_duration_ns is None
+    if total_duration_ns is None:
+        return None
+    if not timed_out and (
+        setup_duration_ns is None or submit_answers_duration_ns is None
     ):
         return None
 
@@ -933,12 +979,16 @@ def _leaderboard_row(run_dir: Path) -> neurodatabench.models.JsonObject | None:
         "correct": correct,
         "run_status": "timed out" if timed_out else "correct",
         "total_seconds": total_duration_ns / 1_000_000_000,
-        "setup_seconds": setup_duration_ns / 1_000_000_000,
-        "submit_answers_seconds": submit_answers_duration_ns / 1_000_000_000,
-        "peak_rss_delta_mib": (
+        "setup_seconds": (
+            None if setup_duration_ns is None else setup_duration_ns / 1_000_000_000
+        ),
+        "submit_answers_seconds": (
             None
-            if comparison_rss_bytes is None
-            else comparison_rss_bytes / 1_048_576
+            if submit_answers_duration_ns is None
+            else submit_answers_duration_ns / 1_000_000_000
+        ),
+        "peak_rss_delta_mib": (
+            None if comparison_rss_bytes is None else comparison_rss_bytes / 1_048_576
         ),
         "peak_rss_mib": (
             None if peak_rss_bytes is None else peak_rss_bytes / 1_048_576
@@ -948,6 +998,11 @@ def _leaderboard_row(run_dir: Path) -> neurodatabench.models.JsonObject | None:
             if network_received_bytes is None
             else network_received_bytes / 1_048_576
         ),
+        "timing_segments": _leaderboard_timing_segments(
+            timings,
+            timed_out=timed_out,
+            total_seconds=total_duration_ns / 1_000_000_000,
+        ),
     }
     timeout_seconds = metadata.get("timeout_seconds")
     if timed_out:
@@ -955,6 +1010,131 @@ def _leaderboard_row(run_dir: Path) -> neurodatabench.models.JsonObject | None:
         if timeout_seconds is not None:
             row["timeout_seconds"] = timeout_seconds
     return row
+
+
+def _leaderboard_timing_segments(
+    timings: neurodatabench.models.JsonObject,
+    *,
+    timed_out: bool,
+    total_seconds: float,
+) -> list[neurodatabench.models.JsonObject]:
+    """Return setup and per-answer elapsed-time segments for a leaderboard row."""
+    phase_timings = timings.get("phase_timings")
+    if not isinstance(phase_timings, list):
+        return [
+            {
+                "stage": "truncated (stage unknown)" if timed_out else "total",
+                "start_seconds": 0.0,
+                "stop_seconds": total_seconds,
+                "duration_seconds": total_seconds,
+            }
+        ]
+
+    segments: list[neurodatabench.models.JsonObject] = []
+    submit_phase: dict[str, object] | None = None
+    for phase in phase_timings:
+        if not isinstance(phase, dict):
+            continue
+        phase_name = phase.get("phase")
+        if phase_name == "setup":
+            setup_segment = _leaderboard_timing_segment(phase, stage="setup")
+            if setup_segment is not None:
+                segments.append(setup_segment)
+        elif phase_name == "submit_answers":
+            submit_phase = phase
+
+    if submit_phase is None:
+        return segments
+
+    submit_start = _json_number_at(submit_phase, ("start_seconds",))
+    submit_stop = _json_number_at(submit_phase, ("stop_seconds",))
+    if submit_start is None or submit_stop is None:
+        return segments
+
+    previous_stop = submit_start
+    submissions = timings.get("answer_submissions")
+    observed_submission = False
+    if isinstance(submissions, list):
+        ordered_submissions = sorted(
+            (
+                submission
+                for submission in submissions
+                if isinstance(submission, dict)
+                and _json_number_at(submission, ("submitted_elapsed_seconds",))
+                is not None
+            ),
+            key=lambda submission: _json_number_at(
+                submission,
+                ("submitted_elapsed_seconds",),
+            )
+            or 0.0,
+        )
+        for submission in ordered_submissions:
+            observed_submission = True
+            submitted_at = _json_number_at(
+                submission,
+                ("submitted_elapsed_seconds",),
+            )
+            assert submitted_at is not None
+            stop = min(max(submitted_at, previous_stop), submit_stop)
+            segments.append(
+                {
+                    "stage": str(submission.get("question_id", "answer")),
+                    "start_seconds": previous_stop,
+                    "stop_seconds": stop,
+                    "duration_seconds": stop - previous_stop,
+                }
+            )
+            previous_stop = stop
+
+    if not observed_submission:
+        segments.append(
+            {
+                "stage": (
+                    "truncated during answer submission"
+                    if timed_out
+                    else "answer submission"
+                ),
+                "start_seconds": submit_start,
+                "stop_seconds": submit_stop,
+                "duration_seconds": submit_stop - submit_start,
+            }
+        )
+    elif previous_stop < submit_stop and timed_out:
+        segments.append(
+            {
+                "stage": "truncated during answer submission",
+                "start_seconds": previous_stop,
+                "stop_seconds": submit_stop,
+                "duration_seconds": submit_stop - previous_stop,
+            }
+        )
+    elif previous_stop < submit_stop:
+        final_segment = segments[-1]
+        final_start = _json_number_at(final_segment, ("start_seconds",))
+        if final_start is not None:
+            final_segment["stop_seconds"] = submit_stop
+            final_segment["duration_seconds"] = submit_stop - final_start
+    return segments
+
+
+def _leaderboard_timing_segment(
+    phase: dict[str, object],
+    *,
+    stage: str,
+) -> neurodatabench.models.JsonObject | None:
+    """Normalize one persisted phase timing into a leaderboard segment."""
+    start = _json_number_at(phase, ("start_seconds",))
+    stop = _json_number_at(phase, ("stop_seconds",))
+    duration = _json_number_at(phase, ("duration_seconds",))
+    if start is None or stop is None or duration is None:
+        return None
+    return {
+        "stage": stage,
+        "start_seconds": start,
+        "stop_seconds": stop,
+        "duration_seconds": duration,
+    }
 
 
 def _write_leaderboard_csv(
@@ -1034,16 +1214,6 @@ def _write_jsonl(
             file.write(json.dumps(_jsonable(row), sort_keys=True) + "\n")
 
 
-def _write_bundle(out_dir: Path) -> None:
-    """Write a zip bundle containing result artifacts."""
-    bundle_path = out_dir / "results_bundle.zip"
-    with zipfile.ZipFile(bundle_path, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
-        for path in sorted(out_dir.iterdir()):
-            if path == bundle_path or not path.is_file():
-                continue
-            bundle.write(path, arcname=path.name)
-
-
 def _jsonable(value: object) -> object:
     """Convert dataclasses and paths into JSON-compatible values."""
     if isinstance(value, pydantic.BaseModel):
@@ -1083,7 +1253,9 @@ def _counter_delta(start: Any, end: Any) -> dict[str, int] | None:
     """Return deltas between two psutil counter snapshots."""
     if start is None or end is None:
         return None
-    return {field: getattr(end, field) - getattr(start, field) for field in start._fields}
+    return {
+        field: getattr(end, field) - getattr(start, field) for field in start._fields
+    }
 
 
 def _child_rss_bytes(process: psutil.Process) -> int:

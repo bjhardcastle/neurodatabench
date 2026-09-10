@@ -2,14 +2,14 @@
 # requires-python = ">=3.10"
 # dependencies = [
 #   "altair",
-#   "lazynwb==1.0.0dev5",
+#   "lazynwb==1.0.0.dev3",
 #   "numpy",
 #   "polars",
 #   "psutil",
 # ]
 # ///
 
-"""Runnable lazynwb 1.0.0dev5 implementation for the packaged NWB benchmark."""
+"""Runnable lazynwb dev6-source implementation for the packaged NWB benchmark."""
 
 from __future__ import annotations
 
@@ -26,18 +26,17 @@ if _REPO_SRC.exists():
 import lazynwb
 import lazynwb.tables
 import lazynwb.timeseries
+import neurodatabench
 import numpy as np
 import polars as pl
-
-import neurodatabench
 
 logger = logging.getLogger(__name__)
 
 state = {}
 
-_DEFAULT_BACKEND = "obstore"
-_DEFAULT_BENCHMARK = "dynamic_routing_hdf5_v0"
-_DEFAULT_IMPLEMENTATION_ID = "lazynwb_v1dev5"
+_DEFAULT_BACKEND = "s3fs"
+_DEFAULT_BENCHMARK = "dynamic_routing_zarr_v0"
+_DEFAULT_IMPLEMENTATION_ID = "lazynwb_dev3"
 _FACEMAP_DOWNLOAD_ROWS = 12_850
 _FACEMAP_DOWNLOAD_COLUMNS = 128
 
@@ -58,6 +57,7 @@ def setup(context: neurodatabench.RunContext) -> None:
     os.environ.setdefault("AWS_REGION", "us-west-2")
 
     lazynwb.config.anon = True
+    # lazynwb.config.use_obstore = False
     state.clear()
 
     state["units"] = lazynwb.scan_nwb(
@@ -82,7 +82,7 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
     for question in context.benchmark.questions:
         logger.debug("Answering benchmark question %s.", question.id)
         match question.id:
-            case "units_VISp_default_qc":
+            case "multisession_units_metadata_query":
                 answer = int(
                     state["units"]
                     .filter((pl.col("structure") == "VISp") & pl.col("default_qc"))
@@ -90,7 +90,7 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
                     .collect()
                     .item()
                 )
-            case "mean_inter_spike_interval":
+            case "predicated_spike_times":
                 visp_units = (
                     state["units"]
                     .filter(
@@ -104,7 +104,7 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
                 )
                 spike_times = visp_units["spike_times"][0]
                 answer = float(np.diff(spike_times).max())
-            case "mean_trial_length":
+            case "multisession_table_query":
                 answer = float(
                     state["trials"]
                     .select(
@@ -113,7 +113,7 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
                     .collect()
                     .item()
                 )
-            case "facemap_side_camera_download_mean":
+            case "large_array":
                 data = np.asarray(
                     state["facemap_side_camera"].data[
                         :_FACEMAP_DOWNLOAD_ROWS,

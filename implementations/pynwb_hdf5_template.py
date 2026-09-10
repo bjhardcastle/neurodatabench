@@ -31,11 +31,10 @@ if _REPO_SRC.exists():
     sys.path.insert(0, _REPO_SRC.as_posix())
 
 import h5py
+import neurodatabench
 import numpy as np
 import pynwb
 import remfile
-
-import neurodatabench
 
 logger = logging.getLogger(__name__)
 
@@ -89,14 +88,14 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
     for question in context.benchmark.questions:
         logger.debug("Answering benchmark question %s.", question.id)
         match question.id:
-            case "units_VISp_default_qc":
+            case "multisession_units_metadata_query":
                 answer = _count_visp_default_qc(state["files"])
-            case "mean_inter_spike_interval":
+            case "predicated_spike_times":
                 answer = _longest_isi_for_fastest_visp_unit(state["files"])
-            case "mean_trial_length":
-                answer = _mean_trial_length(state["files"])
-            case "facemap_side_camera_download_mean":
-                answer = _facemap_side_camera_download_mean(state["files"])
+            case "multisession_table_query":
+                answer = _multisession_table_query(state["files"])
+            case "large_array":
+                answer = _large_array(state["files"])
             case _:
                 raise ValueError(f"Unsupported benchmark question: {question.id}")
         context.submit_answer(question.id, answer)
@@ -233,7 +232,7 @@ def _longest_isi_for_fastest_visp_unit(file_records: list[dict[str, Any]]) -> fl
     return float(np.diff(spike_times).max())
 
 
-def _mean_trial_length(file_records: list[dict[str, Any]]) -> float:
+def _multisession_table_query(file_records: list[dict[str, Any]]) -> float:
     """Compute the mean trial duration across opened PyNWB NWBFiles."""
     total_duration = 0.0
     total_trials = 0
@@ -268,7 +267,7 @@ def _string_array(values: Any) -> np.ndarray:
     )
 
 
-def _facemap_side_camera_download_mean(file_records: list[dict[str, Any]]) -> float:
+def _large_array(file_records: list[dict[str, Any]]) -> float:
     """Return the mean of a 6.6 MB facemap data block from the first NWBFile."""
     if not file_records:
         raise ValueError("At least one NWBFile record is required.")

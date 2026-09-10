@@ -88,6 +88,7 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
                 "lazynwb_pre1_obstore_hdf5_dynamic_routing_hdf5_v0_",
                 output,
             )
+            self.assertIn("--timeout-profile-out", output)
             self.assertIn("-- uv run", output)
             self.assertFalse(output_root.exists())
 
@@ -112,8 +113,30 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
         self.assertIn("Starting 2 matrix run(s).", output)
         self.assertIn("pynwb-zarr-v2-s3fs", output)
         self.assertIn("pynwb-zarr-v2-obstore", output)
-        self.assertIn("examples/pynwb_zarr_template.py", output)
+        self.assertIn("implementations/pynwb_zarr_template.py", output)
         self.assertIn("--with zarr<3", output)
+
+    def test_parquet_components_row_is_selectable(self) -> None:
+        """The parquet component implementation should be available in the matrix."""
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "scripts/run_benchmark_matrix.py",
+                "--dry-run",
+                "--only",
+                "parquet-components",
+            ],
+            check=False,
+            cwd=Path(__file__).resolve().parents[1],
+            capture_output=True,
+            text=True,
+        )
+
+        output = completed.stdout + completed.stderr
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("Starting 1 matrix run(s).", output)
+        self.assertIn("parquet-components-hdf5-polars-s3-anon", output)
+        self.assertIn("implementations/parquet_components_template.py", output)
 
 
 if __name__ == "__main__":

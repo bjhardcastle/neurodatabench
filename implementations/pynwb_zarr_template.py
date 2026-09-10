@@ -32,7 +32,7 @@ sys.path.insert(0, _REPO_ROOT.as_posix())
 import neurodatabench
 from hdmf_zarr import NWBZarrIO
 
-import examples.pynwb_hdf5_template as answer_helpers
+import implementations.pynwb_hdf5_template as answer_helpers
 
 logger = logging.getLogger(__name__)
 state: dict[str, Any] = {}

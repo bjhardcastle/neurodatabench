@@ -19,6 +19,7 @@
 - Use debug logging everywhere except start/finish messages
 - mark internal api with underscore prefixes.
 - keep it simple to use for users but production-level.
+- For supervised benchmark runs with an output directory, pass the same directory through `--timeout-profile-out` so memory and network samples survive a forced timeout.
 
 ## Git Workflow
 - Keep generated data-heavy artifacts (databases, caches, binary files) out of git.

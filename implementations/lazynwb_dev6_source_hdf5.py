@@ -2,14 +2,14 @@
 # requires-python = ">=3.10"
 # dependencies = [
 #   "altair",
-#   "lazynwb==0.2.91",
+#   "lazynwb @ git+https://github.com/bjhardcastle/lazynwb.git@dev6",
 #   "numpy",
-#   "polars==1.38.1",
+#   "polars",
 #   "psutil",
 # ]
 # ///
 
-"""Runnable lazynwb pre-1.0 implementation for the packaged NWB benchmark."""
+"""Runnable lazynwb implementation for the packaged NWB benchmark."""
 
 from __future__ import annotations
 
@@ -26,18 +26,17 @@ if _REPO_SRC.exists():
 import lazynwb
 import lazynwb.tables
 import lazynwb.timeseries
+import neurodatabench
 import numpy as np
 import polars as pl
-
-import neurodatabench
 
 logger = logging.getLogger(__name__)
 
 state = {}
 
-_DEFAULT_BACKEND = "s3fs"
+_DEFAULT_BACKEND = "obstore"
 _DEFAULT_BENCHMARK = "dynamic_routing_hdf5_v0"
-_DEFAULT_IMPLEMENTATION_ID = "lazynwb_v0"
+_DEFAULT_IMPLEMENTATION_ID = "lazynwb_dev"
 _FACEMAP_DOWNLOAD_ROWS = 12_850
 _FACEMAP_DOWNLOAD_COLUMNS = 128
 
@@ -58,7 +57,6 @@ def setup(context: neurodatabench.RunContext) -> None:
     os.environ.setdefault("AWS_REGION", "us-west-2")
 
     lazynwb.config.anon = True
-    _configure_backend(_backend())
     state.clear()
 
     state["units"] = lazynwb.scan_nwb(
@@ -83,7 +81,7 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
     for question in context.benchmark.questions:
         logger.debug("Answering benchmark question %s.", question.id)
         match question.id:
-            case "units_VISp_default_qc":
+            case "multisession_units_metadata_query":
                 answer = int(
                     state["units"]
                     .filter((pl.col("structure") == "VISp") & pl.col("default_qc"))
@@ -91,7 +89,7 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
                     .collect()
                     .item()
                 )
-            case "mean_inter_spike_interval":
+            case "predicated_spike_times":
                 visp_units = (
                     state["units"]
                     .filter(
@@ -105,7 +103,7 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
                 )
                 spike_times = visp_units["spike_times"][0]
                 answer = float(np.diff(spike_times).max())
-            case "mean_trial_length":
+            case "multisession_table_query":
                 answer = float(
                     state["trials"]
                     .select(
@@ -114,7 +112,7 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
                     .collect()
                     .item()
                 )
-            case "facemap_side_camera_download_mean":
+            case "large_array":
                 data = np.asarray(
                     state["facemap_side_camera"].data[
                         :_FACEMAP_DOWNLOAD_ROWS,
@@ -133,22 +131,6 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
 def teardown(context: neurodatabench.RunContext) -> None:
     """Release process-level resources."""
     pass
-
-
-def _backend() -> str:
-    """Return the requested lazynwb object-store backend label."""
-    return os.environ.get("NDB_OBJECT_STORE_BACKEND", _DEFAULT_BACKEND)
-
-
-def _configure_backend(backend: str) -> None:
-    """Enable the requested lazynwb backend by disabling competing backends."""
-    logger.debug("Configuring lazynwb pre-1.0 backend %s.", backend)
-    if hasattr(lazynwb.config, "use_obstore"):
-        lazynwb.config.use_obstore = backend == "obstore"
-    if hasattr(lazynwb.config, "use_remfile"):
-        lazynwb.config.use_remfile = backend == "remfile"
-    if hasattr(lazynwb.config, "fsspec_storage_options"):
-        lazynwb.config.fsspec_storage_options = {"anon": True}
 
 
 def _set_catalog_cache_path() -> None:
@@ -174,15 +156,15 @@ if __name__ == "__main__":
     neurodatabench.main(
         implementation_id=os.environ.get(
             "NDB_IMPLEMENTATION_ID",
-            f"{_DEFAULT_IMPLEMENTATION_ID}_{_backend()}",
+            f"{_DEFAULT_IMPLEMENTATION_ID}_{_DEFAULT_BACKEND}_{_local_cache()}",
         ),
         implementation_nwb_interface="lazynwb",
-        implementation_object_store_backend=_backend(),
+        implementation_object_store_backend=_DEFAULT_BACKEND,
         implementation_local_cache=_local_cache(),
         implementation_remote_cache=False,
         benchmark=os.environ.get("NDB_BENCHMARK", _DEFAULT_BENCHMARK),
         setup=setup,
-        clear_cache=clear_cache,
+        clear_cache=None if _local_cache() == "warm" else clear_cache,
         submit_answers=submit_answers,
         teardown=teardown,
     )

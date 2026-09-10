@@ -173,7 +173,7 @@ def _matrix() -> list[MatrixRun]:
             runs.append(
                 MatrixRun(
                     label=f"lazynwb-pre1-{nwb_format}-{backend}",
-                    helper="examples/lazynwb_v0.py",
+                    helper="implementations/lazynwb_v0.py",
                     benchmark=benchmark,
                     implementation_id=f"lazynwb_pre1_{backend}_{nwb_format}",
                     object_store_backend=backend,
@@ -185,7 +185,7 @@ def _matrix() -> list[MatrixRun]:
             runs.append(
                 MatrixRun(
                     label=f"lazynwb-1.0.0dev5-{nwb_format}-obstore-{local_cache}",
-                    helper="examples/lazynwb_v1dev.py",
+                    helper="implementations/lazynwb_v1dev.py",
                     benchmark=benchmark,
                     implementation_id=f"lazynwb_1dev5_{nwb_format}_{local_cache}",
                     object_store_backend="obstore",
@@ -198,7 +198,7 @@ def _matrix() -> list[MatrixRun]:
         runs.append(
             MatrixRun(
                 label=f"direct-h5py-hdf5-{backend}",
-                helper="examples/direct_h5py_template.py",
+                helper="implementations/direct_h5py_template.py",
                 benchmark=_BENCHMARKS_BY_FORMAT["hdf5"],
                 implementation_id=f"direct_h5py_{backend}",
                 object_store_backend=backend,
@@ -206,13 +206,24 @@ def _matrix() -> list[MatrixRun]:
             )
         )
 
+    runs.append(
+        MatrixRun(
+            label="parquet-components-hdf5-polars-s3-anon",
+            helper="implementations/parquet_components_template.py",
+            benchmark=_BENCHMARKS_BY_FORMAT["hdf5"],
+            implementation_id="parquet_components",
+            object_store_backend="polars_s3_anon",
+            nwb_format="hdf5",
+        )
+    )
+
     for zarr_major in ("2", "3"):
         zarr_pin = "zarr<3" if zarr_major == "2" else "zarr>=3,<4"
         for backend in ("s3fs", "obstore"):
             runs.append(
                 MatrixRun(
                     label=f"direct-zarr-v{zarr_major}-{backend}",
-                    helper="examples/direct_zarr_template.py",
+                    helper="implementations/direct_zarr_template.py",
                     benchmark=_BENCHMARKS_BY_FORMAT["zarr"],
                     implementation_id=f"direct_zarr_v{zarr_major}_{backend}",
                     object_store_backend=backend,
@@ -227,7 +238,7 @@ def _matrix() -> list[MatrixRun]:
         runs.append(
             MatrixRun(
                 label=f"pynwb-zarr-v2-{backend}",
-                helper="examples/pynwb_zarr_template.py",
+                helper="implementations/pynwb_zarr_template.py",
                 benchmark=_BENCHMARKS_BY_FORMAT["zarr"],
                 implementation_id=f"pynwb_hdmf_zarr_direct_{backend}",
                 object_store_backend=backend,
@@ -242,7 +253,7 @@ def _matrix() -> list[MatrixRun]:
         runs.append(
             MatrixRun(
                 label=f"pynwb-hdf5-{backend}",
-                helper="examples/pynwb_hdf5_template.py",
+                helper="implementations/pynwb_hdf5_template.py",
                 benchmark=_BENCHMARKS_BY_FORMAT["hdf5"],
                 implementation_id=f"pynwb_hdf5_nwbfile_{backend}",
                 object_store_backend=backend,
@@ -270,6 +281,7 @@ def _command_for(
     output_root: Path,
 ) -> list[str]:
     """Build the supervised uv command for a matrix run."""
+    run_output_dir = None if args.out is None else _run_output_dir(run, output_root)
     child_command = [
         "uv",
         "run",
@@ -280,8 +292,8 @@ def _command_for(
     ]
     if args.profile_interval_ms is not None:
         child_command.extend(["--profile-interval-ms", str(args.profile_interval_ms)])
-    if args.out is not None:
-        child_command.extend(["--out", str(_run_output_dir(run, output_root))])
+    if run_output_dir is not None:
+        child_command.extend(["--out", str(run_output_dir)])
     command = [
         sys.executable,
         "-m",
@@ -294,6 +306,8 @@ def _command_for(
         command.extend(["--timeout-seconds", str(args.timeout_seconds)])
     if args.no_timeout:
         command.append("--no-timeout")
+    if run_output_dir is not None:
+        command.extend(["--timeout-profile-out", str(run_output_dir)])
     command.append("--")
     command.extend(child_command)
     return command
@@ -314,12 +328,12 @@ def _environment_for(run: MatrixRun, *, output_root: Path) -> dict[str, str]:
     env["NDB_OBJECT_STORE_BACKEND"] = run.object_store_backend
     if run.local_cache is not None:
         env["NDB_LOCAL_CACHE"] = run.local_cache
-    if run.helper in {"examples/lazynwb_v0.py", "examples/lazynwb_v1dev.py"}:
+    if run.helper in {"implementations/lazynwb_v0.py", "implementations/lazynwb_v1dev.py"}:
         cache_name = f"{run.implementation_id.removesuffix('_cold').removesuffix('_warm')}.sqlite"
         env["NDB_LAZYNWB_CACHE_PATH"] = str(output_root / "matrix_caches" / cache_name)
     if run.zarr_major_version is not None:
         env["NDB_ZARR_MAJOR_VERSION"] = run.zarr_major_version
-    if run.helper == "examples/lazynwb_v0.py":
+    if run.helper == "implementations/lazynwb_v0.py":
         if run.object_store_backend == "s3fs":
             env["LAZYNWB_USE_OBSTORE"] = "false"
             env["LAZYNWB_USE_REMFILE"] = "false"
