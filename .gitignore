@@ -1,6 +1,8 @@
 results*/
+benchmark-runs*
 .pytest_cache/
 .venv/
 __pycache__/
 *.py[cod]
 *.zip
+*.sqlite
