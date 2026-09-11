@@ -1,10 +1,31 @@
 # NeuroDataBench
 
-NeuroDataBench is a benchmarking framework for evaluating different NWB (Neurodata Without Borders) access implementations, object-store backends, and caching strategies. It allows tool maintainers and developers to fairly compare performance and correctness across various setups.
+NeuroDataBench is a benchmarking framework for evaluating different data storage, access implementations, object-store backends, and caching strategies for streaming neuroscience data from the cloud. It allows tool maintainers and developers to fairly compare performance across various setups.
 
-## Features
-- Define and run benchmarks with multiple questions and expected answers, tailored to evaluate performance reading different data types.
-- Support for different NWB access implementations and object-store backends.
-- Profiling of memory, network, and CPU usage.
+## Getting started
 
+### Run an example implementation
 
+From the repository root, run a packaged benchmark with `uv`:
+
+```console
+uv run implementations/pynwb_zarr_template.py --out results/pynwb_zarr
+```
+
+The .py file contains code to fetch data from the files specified in the a benchmark (in this case the one in `/src/neurodatabench/benchmarks/dynamic_routing_zarr_v0.json`), and submit answers to the benchmark runner.
+
+Upon completion, a set of profiling results are written to the specified output directory.
+
+### Create your own implementation or improve an existing one
+
+- the optional `setup` callable is for creating a common resource that will be used across the data-fetching and answer-submission phases. For example, instantiating a pynwb object for NWB source.
+- `submit_answers` is the callable where the actual data fetching and answer submission logic resides:
+ iterate over the questions in `context.benchmark.questions`, fetch the data required to answer each question as quickly as possible, in order, and submit the answer for verification with `context.submit_answer(question.id, answer)`.
+- explore whether the library being used has alternative data access patterns that are more efficient. For example, the `DynamicTable` class in pynwb provides a `.to_dataframe()` method, with an optional input argument `exclude: set[str]`, which can speed up data fetching and reduce  memory usage if only a subset of columns is needed.
+
+### Create a benchmark
+- Create a JSON file defining the benchmark, including the data sources, questions, and expected answers.
+- Questions should require fetching data across one or more data sources, representing typical tasks a data scientists would perform when analyzing the dataset.
+- They should challenge the data access performance, not the performance of the computation required to produce the answer: minimize the computational overhead once data is in-memory to reduce the opportunity to optimize this component.
+- They should describe exactly which table columns to fetch or the slices of arrays to read, in order to get to the required answer.
+- The answers must come from the raw data in the data sources, without the possibility of taking shortcuts. For example, if tables are stored in parquet format, row-group metadata for statistics such as min or max could be used to bypass reading the actual data for some questions. Benchmark questions will need to be designed carefully, reviewed and iterated upon!
