@@ -40,10 +40,10 @@ state: dict[str, Any] = {}
 
 def setup(context: neurodatabench.RunContext) -> None:
     """Materialize each remote Zarr store as a PyNWB NWBFile."""
-    logger.debug("Opening %d Zarr stores through NWBZarrIO.", len(context.benchmark.nwb_paths))
+    logger.debug("Opening %d Zarr stores through NWBZarrIO.", len(context.benchmark.data_sources))
     state.clear()
     state["files"] = []
-    for nwb_path in context.benchmark.nwb_paths:
+    for nwb_path in context.benchmark.data_sources:
         nwb_io = NWBZarrIO(
             path=nwb_path,
             mode="r",
@@ -55,7 +55,7 @@ def setup(context: neurodatabench.RunContext) -> None:
 
 def clear_cache(context: neurodatabench.RunContext) -> None:
     """Declare that this implementation has no managed local cache."""
-    logger.debug("No PyNWB Zarr cache to clear for %d paths.", len(context.benchmark.nwb_paths))
+    logger.debug("No PyNWB Zarr cache to clear for %d paths.", len(context.benchmark.data_sources))
 
 
 def submit_answers(context: neurodatabench.RunContext) -> None:

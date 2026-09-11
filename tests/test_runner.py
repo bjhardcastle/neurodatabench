@@ -1084,7 +1084,7 @@ def _benchmark_json(
     """Return a minimal benchmark JSON object."""
     benchmark: dict[str, object] = {
         "id": benchmark_id,
-        "nwb_paths": ["file:///tmp/test.nwb"],
+        "data_sources": ["file:///tmp/test.nwb"],
         "nwb_format": "hdf5",
         "questions": questions,
     }

@@ -51,14 +51,14 @@ def setup(context: neurodatabench.RunContext) -> None:
     """Open every benchmark NWB file as a PyNWB NWBFile and store it in state."""
     logger.debug(
         "Opening %d NWB files through PyNWB NWBHDF5IO.",
-        len(context.benchmark.nwb_paths),
+        len(context.benchmark.data_sources),
     )
     _quiet_storage_debug_loggers()
     state.clear()
     state["files"] = []
 
     try:
-        for nwb_path in context.benchmark.nwb_paths:
+        for nwb_path in context.benchmark.data_sources:
             logger.debug("Opening PyNWB NWBFile for %s.", nwb_path)
             if _backend() == "ros":
                 if not h5py.get_config().ros3:
@@ -79,7 +79,7 @@ def clear_cache(context: neurodatabench.RunContext) -> None:
     """Clear implementation-managed caches before timed benchmark phases."""
     logger.debug(
         "No local PyNWB/remfile disk cache to clear for %d NWB paths.",
-        len(context.benchmark.nwb_paths),
+        len(context.benchmark.data_sources),
     )
 
 
@@ -105,7 +105,7 @@ def teardown(context: neurodatabench.RunContext) -> None:
     """Release PyNWB objects opened during setup."""
     logger.debug(
         "Clearing PyNWB NWBFile state for %d NWB paths.",
-        len(context.benchmark.nwb_paths),
+        len(context.benchmark.data_sources),
     )
     state.clear()
 

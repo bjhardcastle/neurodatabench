@@ -780,7 +780,7 @@ def _run_metadata(
             "id": benchmark.id,
             "source": benchmark_source,
             "nwb_format": benchmark.nwb_format,
-            "nwb_paths": benchmark.nwb_paths,
+            "data_sources": benchmark.data_sources,
         },
         "python": {
             "version": sys.version,

@@ -16,7 +16,7 @@ class ValidationTests(unittest.TestCase):
         benchmark = neurodatabench.models.Benchmark.model_validate(
             {
                 "id": "validation",
-                "nwb_paths": ["file:///tmp/test.nwb"],
+                "data_sources": ["file:///tmp/test.nwb"],
                 "nwb_format": "hdf5",
                 "questions": [
                     {"id": "first", "text": "Q", "answer": 1},
@@ -57,7 +57,7 @@ class ValidationTests(unittest.TestCase):
         benchmark = neurodatabench.models.Benchmark.model_validate(
             {
                 "id": "validation",
-                "nwb_paths": ["file:///tmp/test.nwb"],
+                "data_sources": ["file:///tmp/test.nwb"],
                 "nwb_format": "hdf5",
                 "questions": [
                     {"id": "missing", "text": "Q", "answer": 1},

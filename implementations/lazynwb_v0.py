@@ -45,14 +45,14 @@ def clear_cache(context: neurodatabench.RunContext) -> None:
     """Clear lazynwb caches and prepare an isolated catalog path before timing."""
     logger.debug(
         "Clearing lazynwb caches for %d NWB paths before measured phases.",
-        len(context.benchmark.nwb_paths),
+        len(context.benchmark.data_sources),
     )
     _set_catalog_cache_path()
 
 
 def setup(context: neurodatabench.RunContext) -> None:
     """Configure lazynwb before answering benchmark questions."""
-    logger.debug("Preparing lazynwb for %d NWB paths.", len(context.benchmark.nwb_paths))
+    logger.debug("Preparing lazynwb for %d NWB paths.", len(context.benchmark.data_sources))
     _set_catalog_cache_path()
     os.environ.setdefault("AWS_REGION", "us-west-2")
 
@@ -61,17 +61,17 @@ def setup(context: neurodatabench.RunContext) -> None:
     state.clear()
 
     state["units"] = lazynwb.scan_nwb(
-        context.benchmark.nwb_paths,
+        context.benchmark.data_sources,
         "/units",
         disable_progress=True,
     )
     state["trials"] = lazynwb.scan_nwb(
-        context.benchmark.nwb_paths,
+        context.benchmark.data_sources,
         "/intervals/trials",
         disable_progress=True,
     )
     state["facemap_side_camera"] = lazynwb.timeseries.get_timeseries(
-        context.benchmark.nwb_paths[0],
+        context.benchmark.data_sources[0],
         "/processing/behavior/facemap_side_camera",
         exact_path=True,
     )

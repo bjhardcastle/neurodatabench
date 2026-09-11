@@ -46,7 +46,7 @@ def setup(context: neurodatabench.RunContext) -> None:
     logger.debug(
         "Preparing direct Zarr/%s access for %d NWB stores.",
         _backend(),
-        len(context.benchmark.nwb_paths),
+        len(context.benchmark.data_sources),
     )
     os.environ.setdefault("AWS_REGION", "us-west-2")
     _quiet_storage_debug_loggers()
@@ -56,7 +56,7 @@ def clear_cache(context: neurodatabench.RunContext) -> None:
     """Clear implementation-managed caches before timed benchmark phases."""
     logger.debug(
         "No local direct Zarr cache to clear for %d NWB paths.",
-        len(context.benchmark.nwb_paths),
+        len(context.benchmark.data_sources),
     )
 
 
@@ -66,13 +66,13 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
         logger.debug("Answering benchmark question %s.", question.id)
         match question.id:
             case "multisession_units_metadata_query":
-                answer = _count_visp_default_qc(context.benchmark.nwb_paths)
+                answer = _count_visp_default_qc(context.benchmark.data_sources)
             case "predicated_spike_times":
-                answer = _longest_isi_for_fastest_visp_unit(context.benchmark.nwb_paths)
+                answer = _longest_isi_for_fastest_visp_unit(context.benchmark.data_sources)
             case "multisession_table_query":
-                answer = _multisession_table_query(context.benchmark.nwb_paths)
+                answer = _multisession_table_query(context.benchmark.data_sources)
             case "large_array":
-                answer = _large_array(context.benchmark.nwb_paths)
+                answer = _large_array(context.benchmark.data_sources)
             case _:
                 raise ValueError(f"Unsupported benchmark question: {question.id}")
         context.submit_answer(question.id, answer)
@@ -82,7 +82,7 @@ def teardown(context: neurodatabench.RunContext) -> None:
     """Release process-level resources."""
     logger.debug(
         "Direct Zarr benchmark teardown for %d NWB paths.",
-        len(context.benchmark.nwb_paths),
+        len(context.benchmark.data_sources),
     )
 
 
@@ -197,10 +197,10 @@ class _ObstoreZarrV2Store(MutableMapping[str, bytes]):
         return tuple(missing)
 
 
-def _count_visp_default_qc(nwb_paths: list[str]) -> int:
+def _count_visp_default_qc(data_sources: list[str]) -> int:
     """Count VISp units passing default QC across all NWB stores."""
     count = 0
-    for nwb_path in nwb_paths:
+    for nwb_path in data_sources:
         units = _open_store(nwb_path)["units"]
         structure = np.asarray(units["structure"][:])
         default_qc = np.asarray(units["default_qc"][:], dtype=np.bool_)
@@ -208,13 +208,13 @@ def _count_visp_default_qc(nwb_paths: list[str]) -> int:
     return count
 
 
-def _longest_isi_for_fastest_visp_unit(nwb_paths: list[str]) -> float:
+def _longest_isi_for_fastest_visp_unit(data_sources: list[str]) -> float:
     """Return the longest ISI for the VISp unit with highest firing rate."""
     top_path: str | None = None
     top_row = -1
     top_firing_rate = -np.inf
 
-    for nwb_path in nwb_paths:
+    for nwb_path in data_sources:
         units = _open_store(nwb_path)["units"]
         structure = np.asarray(units["structure"][:])
         firing_rate = np.asarray(units["firing_rate"][:], dtype=np.float64)
@@ -250,11 +250,11 @@ def _get_unit_spike_times(units: Any, unit_index: int) -> np.ndarray:
     return np.asarray(units["spike_times"][start:stop], dtype=np.float64)
 
 
-def _multisession_table_query(nwb_paths: list[str]) -> float:
+def _multisession_table_query(data_sources: list[str]) -> float:
     """Compute the mean trial duration across all NWB stores."""
     total_duration = 0.0
     total_trials = 0
-    for nwb_path in nwb_paths:
+    for nwb_path in data_sources:
         trials = _open_store(nwb_path)["intervals"]["trials"]
         start_time = np.asarray(trials["start_time"][:], dtype=np.float64)
         stop_time = np.asarray(trials["stop_time"][:], dtype=np.float64)
@@ -265,11 +265,11 @@ def _multisession_table_query(nwb_paths: list[str]) -> float:
     return total_duration / total_trials
 
 
-def _large_array(nwb_paths: list[str]) -> float:
+def _large_array(data_sources: list[str]) -> float:
     """Return the mean of a 6.6 MB facemap data block from the first NWB store."""
-    if not nwb_paths:
+    if not data_sources:
         raise ValueError("At least one NWB path is required.")
-    facemap = _open_store(nwb_paths[0])["processing"]["behavior"]["facemap_side_camera"]
+    facemap = _open_store(data_sources[0])["processing"]["behavior"]["facemap_side_camera"]
     data = np.asarray(
         facemap["data"][:_FACEMAP_DOWNLOAD_ROWS, :_FACEMAP_DOWNLOAD_COLUMNS],
         dtype=np.float32,

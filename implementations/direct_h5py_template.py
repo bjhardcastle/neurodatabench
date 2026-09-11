@@ -47,7 +47,7 @@ def setup(context: neurodatabench.RunContext) -> None:
     """Configure process-level settings before answering benchmark questions."""
     logger.debug(
         "Preparing direct h5py/remfile access for %d NWB files.",
-        len(context.benchmark.nwb_paths),
+        len(context.benchmark.data_sources),
     )
     _quiet_storage_debug_loggers()
 
@@ -56,7 +56,7 @@ def clear_cache(context: neurodatabench.RunContext) -> None:
     """Clear implementation-managed caches before timed benchmark phases."""
     logger.debug(
         "No local direct h5py/remfile disk cache to clear for %d NWB paths.",
-        len(context.benchmark.nwb_paths),
+        len(context.benchmark.data_sources),
     )
 
 
@@ -66,15 +66,15 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
         logger.debug("Answering benchmark question %s.", question.id)
         match question.id:
             case "multisession_units_metadata_query":
-                answer = _count_visp_default_qc(context.benchmark.nwb_paths)
+                answer = _count_visp_default_qc(context.benchmark.data_sources)
             case "predicated_spike_times":
                 answer = _longest_isi_for_fastest_visp_unit(
-                    context.benchmark.nwb_paths,
+                    context.benchmark.data_sources,
                 )
             case "multisession_table_query":
-                answer = _multisession_table_query(context.benchmark.nwb_paths)
+                answer = _multisession_table_query(context.benchmark.data_sources)
             case "large_array":
-                answer = _large_array(context.benchmark.nwb_paths)
+                answer = _large_array(context.benchmark.data_sources)
             case _:
                 raise ValueError(f"Unsupported benchmark question: {question.id}")
         context.submit_answer(question.id, answer)
@@ -84,7 +84,7 @@ def teardown(context: neurodatabench.RunContext) -> None:
     """Release process-level resources."""
     logger.debug(
         "Direct h5py benchmark teardown for %d NWB paths.",
-        len(context.benchmark.nwb_paths),
+        len(context.benchmark.data_sources),
     )
 
 
@@ -157,10 +157,10 @@ def _split_s3_uri(nwb_path: str) -> tuple[str, str]:
     return bucket, key
 
 
-def _count_visp_default_qc(nwb_paths: list[str]) -> int:
+def _count_visp_default_qc(data_sources: list[str]) -> int:
     """Count VISp units passing default QC across all NWB files."""
     count = 0
-    for nwb_path in nwb_paths:
+    for nwb_path in data_sources:
         with _open_nwb(nwb_path) as nwb_file:
             units = nwb_file["units"]
             structure = _read_string_array(units["structure"])
@@ -169,13 +169,13 @@ def _count_visp_default_qc(nwb_paths: list[str]) -> int:
     return count
 
 
-def _longest_isi_for_fastest_visp_unit(nwb_paths: list[str]) -> float:
+def _longest_isi_for_fastest_visp_unit(data_sources: list[str]) -> float:
     """Return the longest ISI for the VISp unit with highest firing rate."""
     top_path: str | None = None
     top_row = -1
     top_firing_rate = -np.inf
 
-    for nwb_path in nwb_paths:
+    for nwb_path in data_sources:
         with _open_nwb(nwb_path) as nwb_file:
             units = nwb_file["units"]
             structure = _read_string_array(units["structure"])
@@ -214,11 +214,11 @@ def _get_unit_spike_times(units: h5py.Group, unit_index: int) -> np.ndarray:
     return np.asarray(units["spike_times"][start:stop], dtype=np.float64)
 
 
-def _multisession_table_query(nwb_paths: list[str]) -> float:
+def _multisession_table_query(data_sources: list[str]) -> float:
     """Compute the mean trial duration across all NWB files."""
     total_duration = 0.0
     total_trials = 0
-    for nwb_path in nwb_paths:
+    for nwb_path in data_sources:
         with _open_nwb(nwb_path) as nwb_file:
             trials = nwb_file["intervals"]["trials"]
             start_time = np.asarray(trials["start_time"][:], dtype=np.float64)
@@ -236,11 +236,11 @@ def _read_string_array(dataset: h5py.Dataset) -> np.ndarray:
     return np.asarray(values, dtype=str)
 
 
-def _large_array(nwb_paths: list[str]) -> float:
+def _large_array(data_sources: list[str]) -> float:
     """Return the mean of a 6.6 MB facemap data block from the first NWB file."""
-    if not nwb_paths:
+    if not data_sources:
         raise ValueError("At least one NWB path is required.")
-    with _open_nwb(nwb_paths[0]) as nwb_file:
+    with _open_nwb(data_sources[0]) as nwb_file:
         facemap_data = nwb_file["processing"]["behavior"]["facemap_side_camera"]["data"]
         data = np.asarray(
             facemap_data[:_FACEMAP_DOWNLOAD_ROWS, :_FACEMAP_DOWNLOAD_COLUMNS],

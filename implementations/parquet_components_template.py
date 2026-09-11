@@ -52,7 +52,7 @@ def setup(context: neurodatabench.RunContext) -> None:
     """Configure process-level settings before answering benchmark questions."""
     logger.debug(
         "Preparing parquet-component access for %d NWB-derived sessions.",
-        len(context.benchmark.nwb_paths),
+        len(context.benchmark.data_sources),
     )
     if context.benchmark.id != _DEFAULT_BENCHMARK:
         raise ValueError(
@@ -66,24 +66,24 @@ def clear_cache(context: neurodatabench.RunContext) -> None:
     """Clear implementation-managed caches before timed benchmark phases."""
     logger.debug(
         "No local parquet-component cache to clear for %d NWB paths.",
-        len(context.benchmark.nwb_paths),
+        len(context.benchmark.data_sources),
     )
 
 
 def submit_answers(context: neurodatabench.RunContext) -> None:
     """Submit answers for every benchmark question."""
-    nwb_paths = context.benchmark.nwb_paths
+    data_sources = context.benchmark.data_sources
     for question in context.benchmark.questions:
         logger.debug("Answering benchmark question %s.", question.id)
         match question.id:
             case "multisession_units_metadata_query":
-                answer = _count_visp_default_qc(nwb_paths)
+                answer = _count_visp_default_qc(data_sources)
             case "predicated_spike_times":
-                answer = _longest_isi_for_fastest_visp_unit(nwb_paths)
+                answer = _longest_isi_for_fastest_visp_unit(data_sources)
             case "multisession_table_query":
-                answer = _multisession_table_query(nwb_paths)
+                answer = _multisession_table_query(data_sources)
             case "large_array":
-                answer = _large_array(nwb_paths)
+                answer = _large_array(data_sources)
             case _:
                 raise ValueError(f"Unsupported benchmark question: {question.id}")
         context.submit_answer(question.id, answer)
@@ -93,7 +93,7 @@ def teardown(context: neurodatabench.RunContext) -> None:
     """Release process-level resources."""
     logger.debug(
         "Parquet-component benchmark teardown for %d NWB paths.",
-        len(context.benchmark.nwb_paths),
+        len(context.benchmark.data_sources),
     )
 
 
@@ -147,10 +147,10 @@ def _session_id_from_nwb_path(nwb_path: str) -> str:
     return name.removesuffix(".parquet")
 
 
-def _count_visp_default_qc(nwb_paths: list[str]) -> int:
+def _count_visp_default_qc(data_sources: list[str]) -> int:
     """Count VISp units passing default QC across all parquet units tables."""
     count = 0
-    for nwb_path in nwb_paths:
+    for nwb_path in data_sources:
         session_count = (
             _scan_component("units", nwb_path)
             .select(
@@ -168,14 +168,14 @@ def _count_visp_default_qc(nwb_paths: list[str]) -> int:
     return count
 
 
-def _longest_isi_for_fastest_visp_unit(nwb_paths: list[str]) -> float:
+def _longest_isi_for_fastest_visp_unit(data_sources: list[str]) -> float:
     """Return the longest ISI for the VISp unit with highest firing rate."""
     top_path: str | None = None
     top_row = -1
     top_firing_rate = -np.inf
     top_unit_id: str | None = None
 
-    for nwb_path in nwb_paths:
+    for nwb_path in data_sources:
         candidate = (
             _scan_component("units", nwb_path)
             .with_row_index("_row_index")
@@ -225,11 +225,11 @@ def _unit_spike_times(nwb_path: str, row_index: int) -> np.ndarray:
     return np.asarray(spike_times["spike_times"][0], dtype=np.float64)
 
 
-def _multisession_table_query(nwb_paths: list[str]) -> float:
+def _multisession_table_query(data_sources: list[str]) -> float:
     """Compute the mean trial duration across all parquet trials tables."""
     total_duration = 0.0
     total_trials = 0
-    for nwb_path in nwb_paths:
+    for nwb_path in data_sources:
         trial_summary = (
             _scan_component("trials", nwb_path)
             .select(
@@ -245,12 +245,12 @@ def _multisession_table_query(nwb_paths: list[str]) -> float:
     return total_duration / total_trials
 
 
-def _large_array(nwb_paths: list[str]) -> float:
+def _large_array(data_sources: list[str]) -> float:
     """Return the facemap block mean using the source NWB file for this non-parquet question."""
-    if not nwb_paths:
+    if not data_sources:
         raise ValueError("At least one NWB path is required.")
     logger.debug("Reading facemap data from source NWB because no parquet component exists.")
-    with _open_nwb(nwb_paths[0]) as nwb_file:
+    with _open_nwb(data_sources[0]) as nwb_file:
         facemap_data = nwb_file["processing"]["behavior"]["facemap_side_camera"]["data"]
         data = np.asarray(
             facemap_data[:_FACEMAP_DOWNLOAD_ROWS, :_FACEMAP_DOWNLOAD_COLUMNS],
