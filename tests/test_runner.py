@@ -258,7 +258,7 @@ class RunnerTests(unittest.TestCase):
             self.assertTrue(validation["correct"])
 
     def test_main_uses_default_output_directory(self) -> None:
-        """A run should write to results/<implementation ID> when out is omitted."""
+        """A run should write to results/<benchmark>/<implementation> when out is omitted."""
         with tempfile.TemporaryDirectory() as tmpdir:
             benchmark_path = Path(tmpdir) / "custom.json"
             implementation_dir = Path(tmpdir) / "implementation-run"
@@ -295,7 +295,7 @@ class RunnerTests(unittest.TestCase):
                     argv=(),
                 )
 
-            out_dir = Path(tmpdir) / "results" / "default-out-test"
+            out_dir = Path(tmpdir) / "results" / "custom" / "default-out-test"
             validation = _read_json(out_dir / "validation.json")
             self.assertTrue(validation["correct"])
             self.assertTrue((out_dir / "dashboard.html").exists())

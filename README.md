@@ -14,8 +14,8 @@ uv run implementations/pynwb_zarr_template.py
 
 The `.py` file contains code to fetch data from the files specified in a benchmark (in this case `src/neurodatabench/benchmarks/dynamic_routing_nwb_zarr_v0.json`) and submit answers to the benchmark runner.
 
-Upon completion, profiling results are written to `results/<implementation_id>` in the
-current directory. Pass `--out <path>` to use a different output directory.
+Upon completion, profiling results are written to `results/<benchmark_id>/<implementation_id>`
+in the current directory. Pass `--out <path>` to use a different output directory.
 
 ### Create your own implementation or improve an existing one
 

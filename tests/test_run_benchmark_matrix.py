@@ -85,7 +85,7 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 0, completed.stderr)
             self.assertIn(f"--out {output_root}", output)
             self.assertIn(
-                "lazynwb_0_2_91_obstore_hdf5_dynamic_routing_nwb_hdf5_v0_",
+                "dynamic_routing_nwb_hdf5_v0/lazynwb_0_2_91_obstore_hdf5",
                 output,
             )
             self.assertIn("--timeout-profile-out", output)

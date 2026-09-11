@@ -10,7 +10,6 @@ import subprocess
 import sys
 import time
 from collections.abc import Iterable, Sequence
-from datetime import datetime, timezone
 from pathlib import Path
 
 import neurodatabench.models
@@ -159,9 +158,8 @@ def _command_for(
 
 
 def _run_output_dir(run: MatrixRun, output_root: Path) -> Path:
-    """Return a timestamped output directory for one matrix run."""
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-    return output_root / f"{run.implementation_id}_{run.benchmark}_{timestamp}"
+    """Return the output directory for one matrix run."""
+    return output_root / run.benchmark / run.implementation_id
 
 
 def _environment_for(run: MatrixRun, *, output_root: Path) -> dict[str, str]:

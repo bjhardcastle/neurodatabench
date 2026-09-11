@@ -273,7 +273,10 @@ def main(
     out_dir = (
         config.out
         if config.out is not None
-        else _default_output_dir(implementation_id=implementation_id)
+        else _default_output_dir(
+            benchmark_id=loaded_benchmark.id,
+            implementation_id=implementation_id,
+        )
     )
     submitted_answers: list[dict[str, Any]] = []
     run_start_ns: int | None = None
@@ -457,9 +460,9 @@ def _resolve_config(
     return config
 
 
-def _default_output_dir(*, implementation_id: str) -> Path:
-    """Return the implementation's directory beneath results in the current directory."""
-    return Path.cwd() / "results" / implementation_id
+def _default_output_dir(*, benchmark_id: str, implementation_id: str) -> Path:
+    """Return a benchmark-scoped implementation directory beneath results."""
+    return Path.cwd() / "results" / benchmark_id / implementation_id
 
 
 def _configure_logging(log_level: str) -> None:
@@ -867,8 +870,11 @@ def _copy_implementation_script(source_path: Path | None, out_dir: Path) -> None
 
 def _update_results_leaderboard(out_dir: Path) -> None:
     """Refresh aggregate leaderboard artifacts for default-style results dirs."""
-    results_dir = out_dir.parent
-    if results_dir.name != "results":
+    if out_dir.parent.name == "results":
+        results_dir = out_dir.parent
+    elif out_dir.parent.parent.name == "results":
+        results_dir = out_dir.parent.parent
+    else:
         logger.debug("Skipping leaderboard update outside a results directory.")
         return
 
@@ -887,13 +893,12 @@ def _update_results_leaderboard(out_dir: Path) -> None:
 
 def _leaderboard_rows(results_dir: Path) -> list[neurodatabench.models.JsonObject]:
     """Return leaderboard rows discovered under a results directory."""
-    rows = [
-        row
-        for run_dir in sorted(results_dir.iterdir())
-        if run_dir.is_dir()
-        for row in [_leaderboard_row(run_dir)]
-        if row is not None
-    ]
+    rows: list[neurodatabench.models.JsonObject] = []
+    for metadata_path in sorted(results_dir.rglob("run_metadata.json")):
+        row = _leaderboard_row(metadata_path.parent)
+        if row is not None:
+            row["result_dir"] = str(metadata_path.parent.relative_to(results_dir))
+            rows.append(row)
     rows.sort(
         key=lambda row: (
             str(row["benchmark_id"]),
