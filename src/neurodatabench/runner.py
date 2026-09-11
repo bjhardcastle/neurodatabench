@@ -273,7 +273,7 @@ def main(
     out_dir = (
         config.out
         if config.out is not None
-        else _default_output_dir(implementation_script_path=implementation_script_path)
+        else _default_output_dir(implementation_id=implementation_id)
     )
     submitted_answers: list[dict[str, Any]] = []
     run_start_ns: int | None = None
@@ -457,13 +457,9 @@ def _resolve_config(
     return config
 
 
-def _default_output_dir(*, implementation_script_path: Path | None) -> Path:
-    """Return the implementation file's parent as the default output directory."""
-    if implementation_script_path is None:
-        raise ValueError(
-            "out must be provided when the implementation script path cannot be inferred"
-        )
-    return implementation_script_path.parent
+def _default_output_dir(*, implementation_id: str) -> Path:
+    """Return the implementation's directory beneath results in the current directory."""
+    return Path.cwd() / "results" / implementation_id
 
 
 def _configure_logging(log_level: str) -> None:

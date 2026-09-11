@@ -9,7 +9,10 @@
 #   "pydantic>=2.13.4",
 #   "pydantic-settings>=2.14.1",
 #   "remfile",
+#   "neurodatabench",
 # ]
+# [tool.uv.sources]
+# neurodatabench = { git = "https://github.com/bjhardcastle/neurodatabench" }
 # ///
 
 """Runnable parquet-component implementation for the dynamic routing benchmark."""
@@ -37,7 +40,7 @@ import remfile
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_BENCHMARK = "dynamic_routing_hdf5_v0"
+_DEFAULT_BENCHMARK = "dynamic_routing_nwb_hdf5_v0"
 _DEFAULT_COMPONENT_BASE_URL = (
     "s3://aind-scratch-data/"
     "dynamic-routing/cache/nwb_components/v0.0.289"
@@ -56,7 +59,7 @@ def setup(context: neurodatabench.RunContext) -> None:
     )
     if context.benchmark.id != _DEFAULT_BENCHMARK:
         raise ValueError(
-            "The parquet component cache mirrors dynamic_routing_hdf5_v0; "
+            "The parquet component cache mirrors dynamic_routing_nwb_hdf5_v0; "
             f"got {context.benchmark.id!r}."
         )
     _quiet_storage_debug_loggers()

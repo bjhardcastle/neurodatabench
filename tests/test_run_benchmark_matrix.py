@@ -85,15 +85,15 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 0, completed.stderr)
             self.assertIn(f"--out {output_root}", output)
             self.assertIn(
-                "lazynwb_pre1_obstore_hdf5_dynamic_routing_hdf5_v0_",
+                "lazynwb_0_2_91_obstore_hdf5_dynamic_routing_nwb_hdf5_v0_",
                 output,
             )
             self.assertIn("--timeout-profile-out", output)
             self.assertIn("-- uv run", output)
             self.assertFalse(output_root.exists())
 
-    def test_pynwb_zarr_rows_are_selectable(self) -> None:
-        """PyNWB/HDMF-Zarr matrix rows should cover s3fs and obstore."""
+    def test_pynwb_zarr_row_is_selectable(self) -> None:
+        """The PyNWB/HDMF-Zarr matrix row should use its real s3fs backend."""
         completed = subprocess.run(
             [
                 sys.executable,
@@ -110,9 +110,9 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
 
         output = completed.stdout + completed.stderr
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertIn("Starting 2 matrix run(s).", output)
+        self.assertIn("Starting 1 matrix run(s).", output)
         self.assertIn("pynwb-zarr-v2-s3fs", output)
-        self.assertIn("pynwb-zarr-v2-obstore", output)
+        self.assertNotIn("pynwb-zarr-v2-obstore", output)
         self.assertIn("implementations/pynwb_zarr_template.py", output)
         self.assertIn("--with zarr<3", output)
 

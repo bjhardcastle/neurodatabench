@@ -12,7 +12,10 @@
 #   "pynwb",
 #   "remfile",
 #   "s3fs",
+#   "neurodatabench",
 # ]
+# [tool.uv.sources]
+# neurodatabench = { git = "https://github.com/bjhardcastle/neurodatabench" }
 # ///
 
 """Runnable PyNWB/HDF5 NWBFile implementation for the packaged NWB benchmark."""
@@ -41,7 +44,7 @@ logger = logging.getLogger(__name__)
 state: dict[str, Any] = {}
 
 _DEFAULT_BACKEND = "remfile"
-_DEFAULT_BENCHMARK = "dynamic_routing_hdf5_v0"
+_DEFAULT_BENCHMARK = "dynamic_routing_nwb_hdf5_v0"
 _DEFAULT_IMPLEMENTATION_ID = "pynwb_hdf5_nwbfile"
 _FACEMAP_DOWNLOAD_ROWS = 12_850
 _FACEMAP_DOWNLOAD_COLUMNS = 128
@@ -50,8 +53,9 @@ _FACEMAP_DOWNLOAD_COLUMNS = 128
 def setup(context: neurodatabench.RunContext) -> None:
     """Open every benchmark NWB file as a PyNWB NWBFile and store it in state."""
     logger.debug(
-        "Opening %d NWB files through PyNWB NWBHDF5IO.",
+        "Opening %d NWB files through PyNWB NWBHDF5IO and %s.",
         len(context.benchmark.data_sources),
+        _backend(),
     )
     _quiet_storage_debug_loggers()
     state.clear()
@@ -68,10 +72,12 @@ def setup(context: neurodatabench.RunContext) -> None:
                 file_obj = _open_binary_file(nwb_path)
                 h5_file = h5py.File(file_obj, mode="r")
             nwb_io = pynwb.NWBHDF5IO(file=h5_file, mode="r", load_namespaces=True)
-            state["files"].append({"nwb_file": nwb_io.read()})
+            file_record: dict[str, Any] = {"nwb_io": nwb_io}
+            state["files"].append(file_record)
+            file_record["nwb_file"] = nwb_io.read()
     except Exception:
         logger.debug("Clearing partially opened PyNWB files after setup failure.")
-        state.clear()
+        _close_open_files()
         raise
 
 
@@ -107,6 +113,13 @@ def teardown(context: neurodatabench.RunContext) -> None:
         "Clearing PyNWB NWBFile state for %d NWB paths.",
         len(context.benchmark.data_sources),
     )
+    _close_open_files()
+
+
+def _close_open_files() -> None:
+    """Close every open PyNWB IO handle and clear implementation state."""
+    for file_record in reversed(state.get("files", [])):
+        file_record["nwb_io"].close()
     state.clear()
 
 
@@ -289,7 +302,7 @@ if __name__ == "__main__":
         implementation_nwb_interface="pynwb",
         implementation_object_store_backend=_backend(),
         implementation_local_cache=None,
-        implementation_remote_cache=None,
+        implementation_remote_cache=False,
         benchmark=os.environ.get("NDB_BENCHMARK", _DEFAULT_BENCHMARK),
         setup=setup,
         clear_cache=clear_cache,

@@ -10,7 +10,10 @@
 #   "remfile",
 #   "s3fs",
 #   "zarr",
+#   "neurodatabench",
 # ]
+# [tool.uv.sources]
+# neurodatabench = { git = "https://github.com/bjhardcastle/neurodatabench" }
 # ///
 
 """Runnable direct Zarr implementation for the packaged NWB benchmark."""
@@ -35,7 +38,7 @@ import zarr
 logger = logging.getLogger(__name__)
 
 _DEFAULT_BACKEND = "s3fs"
-_DEFAULT_BENCHMARK = "dynamic_routing_zarr_v0"
+_DEFAULT_BENCHMARK = "dynamic_routing_nwb_zarr_v0"
 _DEFAULT_IMPLEMENTATION_ID = "direct_zarr"
 _FACEMAP_DOWNLOAD_ROWS = 12_850
 _FACEMAP_DOWNLOAD_COLUMNS = 128
@@ -285,7 +288,7 @@ if __name__ == "__main__":
         ),
         implementation_nwb_interface=None,
         implementation_object_store_backend=_backend(),
-        implementation_local_cache="cold",
+        implementation_local_cache=None,
         implementation_remote_cache=False,
         benchmark=os.environ.get("NDB_BENCHMARK", _DEFAULT_BENCHMARK),
         setup=setup,

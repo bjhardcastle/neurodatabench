@@ -10,5 +10,5 @@
         "commandCenter.foreground": "#e7e7e7"
     },
     "peacock.color": "#322a7b",
-    "python.defaultInterpreterPath": "C:\\Users\\ben.hardcastle\\github\\neurodatabench\\.venv\\Scripts\\python.exe"
+    "python.defaultInterpreterPath": "/Users/benh/github/neurodatabench/.venv/bin/python3"
 }

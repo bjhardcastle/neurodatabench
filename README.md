@@ -9,12 +9,13 @@ NeuroDataBench is a benchmarking framework for evaluating different data storage
 From the repository root, run a packaged benchmark with `uv`:
 
 ```console
-uv run implementations/pynwb_zarr_template.py --out results/pynwb_zarr
+uv run implementations/pynwb_zarr_template.py
 ```
 
-The .py file contains code to fetch data from the files specified in the a benchmark (in this case the one in `/src/neurodatabench/benchmarks/dynamic_routing_zarr_v0.json`), and submit answers to the benchmark runner.
+The `.py` file contains code to fetch data from the files specified in a benchmark (in this case `src/neurodatabench/benchmarks/dynamic_routing_nwb_zarr_v0.json`) and submit answers to the benchmark runner.
 
-Upon completion, a set of profiling results are written to the specified output directory.
+Upon completion, profiling results are written to `results/<implementation_id>` in the
+current directory. Pass `--out <path>` to use a different output directory.
 
 ### Create your own implementation or improve an existing one
 
@@ -29,3 +30,35 @@ Upon completion, a set of profiling results are written to the specified output 
 - They should challenge the data access performance, not the performance of the computation required to produce the answer: minimize the computational overhead once data is in-memory to reduce the opportunity to optimize this component.
 - They should describe exactly which table columns to fetch or the slices of arrays to read, in order to get to the required answer.
 - The answers must come from the raw data in the data sources, without the possibility of taking shortcuts. For example, if tables are stored in parquet format, row-group metadata for statistics such as min or max could be used to bypass reading the actual data for some questions. Benchmark questions will need to be designed carefully, reviewed and iterated upon!
+
+
+## Run an implementation matrix
+
+Preview the repository's default matrix without running the actual benchmarks:
+
+```console
+uv run python scripts/run_benchmark_matrix.py --dry-run
+```
+
+Custom matrices can reuse the package runner directly:
+
+```python
+from pathlib import Path
+
+from neurodatabench.matrix import MatrixRun, run_matrix
+
+runs = [
+    MatrixRun(
+        label="my-reader",
+        implementation="implementations/my_reader.py",
+        benchmark="dynamic_routing_nwb_hdf5_v0",
+        implementation_id="my_reader_1",
+        object_store_backend="s3fs",
+        dependencies=("my-reader==1.0",),
+    )
+]
+
+raise SystemExit(run_matrix(runs, repo_root=Path.cwd()))
+```
+
+Note that different versions of python dependencies can be specified in the matrix for comparison.

@@ -10,8 +10,11 @@
 #   "pydantic-settings>=2.14.1",
 #   "remfile",
 #   "s3fs",
+#   "neurodatabench",
 # ]
-# ///
+# [tool.uv.sources]
+# neurodatabench = { git = "https://github.com/bjhardcastle/neurodatabench" }
+# # ///
 
 """Runnable direct h5py implementation for the packaged NWB benchmark."""
 
@@ -37,7 +40,7 @@ import remfile
 logger = logging.getLogger(__name__)
 
 _DEFAULT_BACKEND = "remfile"
-_DEFAULT_BENCHMARK = "dynamic_routing_hdf5_v0"
+_DEFAULT_BENCHMARK = "dynamic_routing_nwb_hdf5_v0"
 _DEFAULT_IMPLEMENTATION_ID = "direct_h5py"
 _FACEMAP_DOWNLOAD_ROWS = 12_850
 _FACEMAP_DOWNLOAD_COLUMNS = 128
@@ -46,7 +49,8 @@ _FACEMAP_DOWNLOAD_COLUMNS = 128
 def setup(context: neurodatabench.RunContext) -> None:
     """Configure process-level settings before answering benchmark questions."""
     logger.debug(
-        "Preparing direct h5py/remfile access for %d NWB files.",
+        "Preparing direct h5py/%s access for %d NWB files.",
+        _backend(),
         len(context.benchmark.data_sources),
     )
     _quiet_storage_debug_loggers()
@@ -55,7 +59,7 @@ def setup(context: neurodatabench.RunContext) -> None:
 def clear_cache(context: neurodatabench.RunContext) -> None:
     """Clear implementation-managed caches before timed benchmark phases."""
     logger.debug(
-        "No local direct h5py/remfile disk cache to clear for %d NWB paths.",
+        "No local direct h5py disk cache to clear for %d NWB paths.",
         len(context.benchmark.data_sources),
     )
 
@@ -258,7 +262,7 @@ if __name__ == "__main__":
         implementation_nwb_interface=None,
         implementation_object_store_backend=_backend(),
         implementation_local_cache=None,
-        implementation_remote_cache=None,
+        implementation_remote_cache=False,
         benchmark=os.environ.get("NDB_BENCHMARK", _DEFAULT_BENCHMARK),
         setup=setup,
         clear_cache=clear_cache,

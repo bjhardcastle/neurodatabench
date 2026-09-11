@@ -62,7 +62,7 @@ class RunnerTests(unittest.TestCase):
                     implementation_object_store_backend="s3fs",
                     implementation_local_cache=None,
                     implementation_remote_cache=False,
-                    benchmark="dynamic_routing_zarr_v0",
+                    benchmark="dynamic_routing_nwb_zarr_v0",
                     out=tmpdir,
                     setup=setup,
                     submit_answers=submit_answers,
@@ -73,7 +73,7 @@ class RunnerTests(unittest.TestCase):
             self.assertIs(seen_contexts[0], seen_contexts[1])
             self.assertEqual(
                 seen_contexts[0].benchmark.id,
-                "dynamic_routing_zarr_v0",
+                "dynamic_routing_nwb_zarr_v0",
             )
             self.assertTrue((out_dir / "benchmark.json").exists())
             self.assertTrue((out_dir / "run_metadata.json").exists())
@@ -258,7 +258,7 @@ class RunnerTests(unittest.TestCase):
             self.assertTrue(validation["correct"])
 
     def test_main_uses_default_output_directory(self) -> None:
-        """A run should write beside its implementation file when out is omitted."""
+        """A run should write to results/<implementation ID> when out is omitted."""
         with tempfile.TemporaryDirectory() as tmpdir:
             benchmark_path = Path(tmpdir) / "custom.json"
             implementation_dir = Path(tmpdir) / "implementation-run"
@@ -279,21 +279,27 @@ class RunnerTests(unittest.TestCase):
                 """Submit the expected answer."""
                 context.submit_answer("q", 1)
 
-            neurodatabench.runner.main(
-                implementation_id="default-out-test",
-                implementation_local_cache=None,
-                implementation_remote_cache=False,
-                benchmark=benchmark_path,
-                implementation_script=implementation_path,
-                setup=setup,
-                submit_answers=submit_answers,
-                argv=(),
-            )
+            with unittest.mock.patch.object(
+                neurodatabench.runner.Path,
+                "cwd",
+                return_value=Path(tmpdir),
+            ):
+                neurodatabench.runner.main(
+                    implementation_id="default-out-test",
+                    implementation_local_cache=None,
+                    implementation_remote_cache=False,
+                    benchmark=benchmark_path,
+                    implementation_script=implementation_path,
+                    setup=setup,
+                    submit_answers=submit_answers,
+                    argv=(),
+                )
 
-            validation = _read_json(implementation_dir / "validation.json")
+            out_dir = Path(tmpdir) / "results" / "default-out-test"
+            validation = _read_json(out_dir / "validation.json")
             self.assertTrue(validation["correct"])
-            self.assertTrue((implementation_dir / "dashboard.html").exists())
-            self.assertFalse((Path(tmpdir) / "results").exists())
+            self.assertTrue((out_dir / "dashboard.html").exists())
+            self.assertFalse((implementation_dir / "validation.json").exists())
 
     def test_results_leaderboard_updates_for_successful_runs(self) -> None:
         """Runs under a results directory should refresh aggregate leaderboard files."""
@@ -539,19 +545,19 @@ class RunnerTests(unittest.TestCase):
         """Log level should resolve from env, call defaults, and CLI overrides."""
         with unittest.mock.patch.dict(os.environ, {"NDB_LOG_LEVEL": "error"}):
             env_config = neurodatabench.runner._resolve_config(
-                default_benchmark="dynamic_routing_zarr_v0",
+                default_benchmark="dynamic_routing_nwb_zarr_v0",
                 default_out=None,
                 default_log_level=None,
                 argv=(),
             )
             call_config = neurodatabench.runner._resolve_config(
-                default_benchmark="dynamic_routing_zarr_v0",
+                default_benchmark="dynamic_routing_nwb_zarr_v0",
                 default_out=None,
                 default_log_level="info",
                 argv=(),
             )
             cli_config = neurodatabench.runner._resolve_config(
-                default_benchmark="dynamic_routing_zarr_v0",
+                default_benchmark="dynamic_routing_nwb_zarr_v0",
                 default_out=None,
                 default_log_level="info",
                 argv=("--log-level", "debug"),
@@ -565,20 +571,20 @@ class RunnerTests(unittest.TestCase):
         """Fail-fast validation should resolve from all settings inputs."""
         with unittest.mock.patch.dict(os.environ, {"NDB_FAIL_FAST": "true"}):
             env_config = neurodatabench.runner._resolve_config(
-                default_benchmark="dynamic_routing_zarr_v0",
+                default_benchmark="dynamic_routing_nwb_zarr_v0",
                 default_out=None,
                 default_log_level=None,
                 argv=(),
             )
             call_config = neurodatabench.runner._resolve_config(
-                default_benchmark="dynamic_routing_zarr_v0",
+                default_benchmark="dynamic_routing_nwb_zarr_v0",
                 default_out=None,
                 default_log_level=None,
                 default_fail_fast=False,
                 argv=(),
             )
             cli_config = neurodatabench.runner._resolve_config(
-                default_benchmark="dynamic_routing_zarr_v0",
+                default_benchmark="dynamic_routing_nwb_zarr_v0",
                 default_out=None,
                 default_log_level=None,
                 default_fail_fast=False,
@@ -762,7 +768,7 @@ class RunnerTests(unittest.TestCase):
         """Invalid log levels should fail during settings validation."""
         with self.assertRaises(pydantic.ValidationError):
             neurodatabench.runner._resolve_config(
-                default_benchmark="dynamic_routing_zarr_v0",
+                default_benchmark="dynamic_routing_nwb_zarr_v0",
                 default_out=None,
                 default_log_level="verbose",
                 argv=(),
