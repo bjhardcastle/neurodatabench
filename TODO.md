@@ -1,0 +1,5 @@
+- [ ] update dynamic routing benchmark names to indicate NWB file format
+- [ ] thoroughly review the current implementations, ensuring that package versions are being managed correctly, config settings that are passed through command line arguments are used correctly and captured in metadata. If there are opportunities, make functions in the package to simplify implementations and reduce the need for duplicate code (with the exception of actual data access implementation, which should always be defined in the .py file for visibility)
+- [ ] the run matrix script is rough - refactor and extract out general functions that could make it simpler to run a custom matrix. 
+- [ ] the various lazynwb implementations or zarr implementations should be almost identical - version should be managed from outside in matrix runner, and any different config/behaviors switched in implementation .py based on package version 
+- [ ] leaderboard should ingest new results automatically and allow exploration of individual implementations. Need a mechanism for tool developers to submit new results via github. 

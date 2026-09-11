@@ -1,7 +1,7 @@
 # AGENTS.md
 
-## Project Overview
-- Audience: Tool maintainers comparing PyNWB, LINDI/Neurosift, storage/cache backends, other NWB reader implementations, and developers who have their own NWB access solution and want to benchmark it fairly.
+## Status
+Under heavy development: feel free to change any parts of the package or the overall approach if you can improve usability or functionality. Don't try to maintain backward compatibility at this stage.
 
 ## Development Rules
 - Non-trivial Python modules should have a module docstring that explains their role.
