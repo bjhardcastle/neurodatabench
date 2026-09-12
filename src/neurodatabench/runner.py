@@ -36,6 +36,7 @@ logger = logging.getLogger(__name__)
 _IMPLEMENTATION_SCRIPT_ARTIFACT_NAME = "implementation.py"
 _REQUIREMENTS_ARTIFACT_NAME = "requirements.txt"
 BenchmarkValidationError = neurodatabench.validation.BenchmarkValidationError
+SUPERVISOR_TIMEOUT_EXIT_CODE = 124
 
 
 class _RunConfig(pydantic_settings.BaseSettings):
@@ -162,10 +163,13 @@ class _Profiler:
         """Record the process RSS baseline before measured setup starts."""
         try:
             process_rss = self._process.memory_info().rss
-        except psutil.Error:
-            logger.debug("Profiled process vanished before memory baseline capture.")
+            child_rss = _child_rss_bytes(self._process)
+        except (psutil.Error, PermissionError):
+            logger.debug(
+                "Unable to inspect the profiled process for memory baseline capture.",
+                exc_info=True,
+            )
             return
-        child_rss = _child_rss_bytes(self._process)
         self._baseline_process_rss_bytes = process_rss
         self._baseline_process_plus_children_rss_bytes = process_rss + child_rss
 
@@ -183,17 +187,31 @@ class _Profiler:
             memory = self._process.memory_info()
             process_cpu_percent = self._process.cpu_percent(interval=None)
             process_num_threads = self._process.num_threads()
-        except psutil.Error:
-            logger.debug("Skipping sample after profiled process exited.")
+        except (psutil.Error, PermissionError):
+            logger.debug(
+                "Skipping sample because the profiled process could not be inspected.",
+                exc_info=True,
+            )
             return None
         child_rss = 0
         child_cpu = 0.0
-        for child in self._process.children(recursive=True):
+        try:
+            children = self._process.children(recursive=True)
+        except (psutil.Error, PermissionError):
+            logger.debug(
+                "Unable to inspect child processes during profiling.",
+                exc_info=True,
+            )
+            children = []
+        for child in children:
             try:
                 child_rss += child.memory_info().rss
                 child_cpu += child.cpu_percent(interval=None)
-            except psutil.Error:
-                logger.debug("Skipping vanished child process during profiling.")
+            except (psutil.Error, PermissionError):
+                logger.debug(
+                    "Skipping a child process that could not be inspected.",
+                    exc_info=True,
+                )
         virtual_memory = psutil.virtual_memory()
         return {
             "time_ns": time.time_ns(),
@@ -621,9 +639,7 @@ def _run_supervised_command(
                 profiler=profiler,
             )
         logger.error("Benchmark timed out at %.3f seconds.", elapsed_seconds)
-        raise SystemExit(
-            f"Benchmark timed out at {elapsed_seconds:g} seconds"
-        ) from None
+        return SUPERVISOR_TIMEOUT_EXIT_CODE
 
 
 def _write_timeout_profile_artifacts(*, out_dir: Path, profiler: _Profiler) -> None:
@@ -645,7 +661,19 @@ def _kill_process_tree(process: subprocess.Popen[object]) -> None:
         logger.debug("Supervised process already exited before timeout kill.")
         return
 
-    targets = [*parent.children(recursive=True), parent]
+    try:
+        targets = [*parent.children(recursive=True), parent]
+    except (psutil.Error, PermissionError):
+        logger.debug(
+            "Unable to enumerate the supervised process tree; killing the direct child.",
+            exc_info=True,
+        )
+        process.kill()
+        try:
+            process.wait(timeout=5.0)
+        except subprocess.TimeoutExpired:
+            logger.debug("Supervised process did not exit after direct kill.")
+        return
     for target in targets:
         try:
             logger.debug("Killing process %d.", target.pid)
@@ -1262,11 +1290,22 @@ def _counter_delta(start: Any, end: Any) -> dict[str, int] | None:
 def _child_rss_bytes(process: psutil.Process) -> int:
     """Return total RSS bytes for currently live child processes."""
     child_rss = 0
-    for child in process.children(recursive=True):
+    try:
+        children = process.children(recursive=True)
+    except (psutil.Error, PermissionError):
+        logger.debug(
+            "Unable to enumerate child processes during baseline profiling.",
+            exc_info=True,
+        )
+        return child_rss
+    for child in children:
         try:
             child_rss += child.memory_info().rss
-        except psutil.Error:
-            logger.debug("Skipping vanished child process during baseline profiling.")
+        except (psutil.Error, PermissionError):
+            logger.debug(
+                "Skipping a child process that could not be inspected during baseline profiling.",
+                exc_info=True,
+            )
     return child_rss
 
 

@@ -13,6 +13,7 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 
 import neurodatabench.models
+import neurodatabench.runner
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,7 @@ def run_matrix(
         resolved_status_path.parent.mkdir(parents=True, exist_ok=True)
 
     failures = 0
+    timeouts = 0
     logger.info("Starting %d matrix run(s).", len(runs))
     for index, run in enumerate(runs, start=1):
         logger.info("Starting %d/%d: %s", index, len(runs), run.label)
@@ -90,9 +92,10 @@ def run_matrix(
         started = time.monotonic()
         if dry_run:
             logger.info("DRY RUN: %s", " ".join(command))
-            result: dict[str, float | int] = {
+            result: dict[str, float | int | str] = {
                 "returncode": 0,
                 "elapsed_seconds": 0.0,
+                "outcome": "completed",
             }
         else:
             completed = subprocess.run(
@@ -104,22 +107,46 @@ def run_matrix(
             result = {
                 "returncode": completed.returncode,
                 "elapsed_seconds": time.monotonic() - started,
+                "outcome": _outcome_for_returncode(completed.returncode),
             }
             _write_status(resolved_status_path, run, command, result)
 
-        if result["returncode"] != 0:
+        if result["outcome"] == "timed_out":
+            timeouts += 1
+            logger.warning("Timed out %s.", run.label)
+        elif result["outcome"] == "failed":
             failures += 1
-            logger.error("Failed %s with exit code %s.", run.label, result["returncode"])
+            logger.error(
+                "Failed %s with exit code %s.", run.label, result["returncode"]
+            )
             if not keep_going:
                 return int(result["returncode"])
         else:
-            logger.info("Finished %s in %.3f seconds.", run.label, result["elapsed_seconds"])
+            logger.info(
+                "Finished %s in %.3f seconds.", run.label, result["elapsed_seconds"]
+            )
 
     if failures:
-        logger.error("Matrix finished with %d failed run(s).", failures)
+        logger.error(
+            "Matrix finished with %d failed and %d timed-out run(s).",
+            failures,
+            timeouts,
+        )
         return 1
+    if timeouts:
+        logger.warning("Matrix finished with %d timed-out run(s).", timeouts)
+        return 0
     logger.info("Matrix finished successfully.")
     return 0
+
+
+def _outcome_for_returncode(returncode: int) -> str:
+    """Return the matrix outcome represented by a child process exit code."""
+    if returncode == 0:
+        return "completed"
+    if returncode == neurodatabench.runner.SUPERVISOR_TIMEOUT_EXIT_CODE:
+        return "timed_out"
+    return "failed"
 
 
 def _command_for(
@@ -195,7 +222,7 @@ def _write_status(
     status_path: Path,
     run: MatrixRun,
     command: list[str],
-    result: dict[str, float | int],
+    result: dict[str, float | int | str],
 ) -> None:
     """Append one JSON Lines status record."""
     record = {"run": dataclasses.asdict(run), "command": command, **result}

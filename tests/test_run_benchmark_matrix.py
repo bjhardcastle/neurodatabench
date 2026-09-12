@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 import tempfile
@@ -116,6 +117,25 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
         self.assertIn("implementations/pynwb_zarr_template.py", output)
         self.assertIn("--with zarr<3", output)
 
+    def test_default_matrix_omits_unsupported_ros3_rows(self) -> None:
+        """The self-contained matrix should not require a nonstandard h5py build."""
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "scripts/run_benchmark_matrix.py",
+                "--dry-run",
+                "--only=ros",
+            ],
+            check=False,
+            cwd=Path(__file__).resolve().parents[1],
+            capture_output=True,
+            text=True,
+        )
+
+        output = completed.stdout + completed.stderr
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("No matrix runs selected.", output)
+
     def test_parquet_components_row_is_selectable(self) -> None:
         """The parquet component implementation should be available in the matrix."""
         completed = subprocess.run(
@@ -137,6 +157,15 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
         self.assertIn("Starting 1 matrix run(s).", output)
         self.assertIn("parquet-components-hdf5-polars-s3-anon", output)
         self.assertIn("implementations/parquet_components_template.py", output)
+
+    def test_implementation_scripts_have_closed_inline_metadata(self) -> None:
+        """Every implementation script should contain validly delimited inline metadata."""
+        implementations_dir = Path(__file__).resolve().parents[1] / "implementations"
+        for script_path in implementations_dir.glob("*.py"):
+            with self.subTest(script=script_path.name):
+                script = script_path.read_text(encoding="utf-8")
+                markers = re.findall(r"^# ///(?: script)?$", script, flags=re.MULTILINE)
+                self.assertEqual(markers, ["# /// script", "# ///"])
 
 
 if __name__ == "__main__":

@@ -146,16 +146,15 @@ def _open_binary_file(nwb_path: str) -> Any:
     if backend == "ros":
         raise RuntimeError("ROS3 is opened directly as an h5py.File in setup().")
     if backend == "obstore":
-        import obstore
-        from obstore.store import S3Store
+        from obstore import fsspec as obstore_fsspec
 
         bucket, key = _split_s3_uri(nwb_path)
-        store = S3Store(
-            bucket=bucket,
+        filesystem = obstore_fsspec.FsspecStore(
+            "s3",
             config={"region": os.environ.get("AWS_REGION", "us-west-2")},
             skip_signature=True,
         )
-        return obstore.open_reader(store, key)
+        return filesystem.open(f"{bucket}/{key}", mode="rb")
     raise ValueError(f"Unsupported PyNWB HDF5 backend: {backend}")
 
 

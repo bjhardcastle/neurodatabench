@@ -12,6 +12,7 @@ import unittest
 import unittest.mock
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import pydantic
 
@@ -660,7 +661,7 @@ class RunnerTests(unittest.TestCase):
                 self.killed = True
 
         process = FakeProcess()
-        with self.assertLogs("neurodatabench.runner", level="ERROR"):
+        with self.assertLogs("neurodatabench.runner", level="ERROR") as logs:
             with unittest.mock.patch.object(
                 neurodatabench.runner.subprocess,
                 "Popen",
@@ -675,14 +676,16 @@ class RunnerTests(unittest.TestCase):
                         "monotonic",
                         side_effect=[100.0, 112.345],
                     ):
-                        with self.assertRaises(SystemExit) as error:
-                            neurodatabench.runner._run_supervised_command(
-                                ["fake"],
-                                timeout_seconds=10.0,
-                            )
+                        return_code = neurodatabench.runner._run_supervised_command(
+                            ["fake"],
+                            timeout_seconds=10.0,
+                        )
 
         kill_process_tree.assert_called_once_with(process)
-        self.assertEqual(str(error.exception), "Benchmark timed out at 12.345 seconds")
+        self.assertEqual(
+            return_code, neurodatabench.runner.SUPERVISOR_TIMEOUT_EXIT_CODE
+        )
+        self.assertIn("Benchmark timed out at 12.345 seconds.", "\n".join(logs.output))
 
     def test_supervised_timeout_kills_process_tree(self) -> None:
         """Timeout cleanup should kill the uv process and descendants."""
@@ -746,16 +749,17 @@ class RunnerTests(unittest.TestCase):
         """Supervisor-owned samples should survive termination of the child."""
         with tempfile.TemporaryDirectory() as tmpdir:
             profile_out = Path(tmpdir) / "timeout-result"
-            with (
-                self.assertLogs("neurodatabench.runner", level="ERROR"),
-                self.assertRaises(SystemExit),
-            ):
-                neurodatabench.runner._run_supervised_command(
+            with self.assertLogs("neurodatabench.runner", level="ERROR"):
+                return_code = neurodatabench.runner._run_supervised_command(
                     [sys.executable, "-c", "import time; time.sleep(5)"],
                     timeout_seconds=0.25,
                     timeout_profile_out=profile_out,
                 )
 
+            self.assertEqual(
+                return_code,
+                neurodatabench.runner.SUPERVISOR_TIMEOUT_EXIT_CODE,
+            )
             samples = (profile_out / "profile_samples.jsonl").read_text(
                 encoding="utf-8"
             )
@@ -763,6 +767,43 @@ class RunnerTests(unittest.TestCase):
             self.assertTrue(samples.strip())
             self.assertGreaterEqual(summary["num_samples"], 1)
             self.assertEqual(summary["profiler_scope"], "supervised_process_tree")
+
+    def test_profiler_tolerates_denied_child_process_inspection(self) -> None:
+        """Unavailable process-tree metrics should not fail the supervised command."""
+
+        class RestrictedProcess:
+            """Process double whose own metrics work but child enumeration is denied."""
+
+            def memory_info(self) -> Any:
+                """Return the current process memory snapshot."""
+                return type("Memory", (), {"rss": 100, "vms": 200})()
+
+            def cpu_percent(self, interval: float | None = None) -> float:
+                """Return a stable CPU measurement."""
+                return 0.0
+
+            def num_threads(self) -> int:
+                """Return a stable thread count."""
+                return 1
+
+            def children(self, *, recursive: bool) -> list[object]:
+                """Simulate macOS denying process table inspection."""
+                raise PermissionError("process table unavailable")
+
+        profiler = neurodatabench.runner._Profiler(
+            interval_seconds=0.01,
+            process=RestrictedProcess(),  # type: ignore[arg-type]
+        )
+
+        with self.assertLogs("neurodatabench.runner", level="DEBUG"):
+            profiler._record_memory_baseline()
+            sample = profiler._sample()
+
+        self.assertEqual(profiler._baseline_process_rss_bytes, 100)
+        self.assertEqual(profiler._baseline_process_plus_children_rss_bytes, 100)
+        self.assertIsNotNone(sample)
+        assert sample is not None
+        self.assertEqual(sample["children"], {"cpu_percent": 0.0, "rss_bytes": 0})
 
     def test_invalid_log_level_raises(self) -> None:
         """Invalid log levels should fail during settings validation."""

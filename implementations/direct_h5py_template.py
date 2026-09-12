@@ -14,7 +14,7 @@
 # ]
 # [tool.uv.sources]
 # neurodatabench = { git = "https://github.com/bjhardcastle/neurodatabench" }
-# # ///
+# ///
 
 """Runnable direct h5py implementation for the packaged NWB benchmark."""
 

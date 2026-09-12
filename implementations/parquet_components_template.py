@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 _DEFAULT_BENCHMARK = "dynamic_routing_nwb_hdf5_v0"
 _DEFAULT_COMPONENT_BASE_URL = (
     "s3://aind-scratch-data/"
-    "dynamic-routing/cache/nwb_components/v0.0.289"
+    "dynamic-routing/cache/nwb_components/v0.0.273"
 )
 _DEFAULT_IMPLEMENTATION_ID = "parquet_components"
 _OBJECT_STORE_BACKEND = "polars_s3_anon"

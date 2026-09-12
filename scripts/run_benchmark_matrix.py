@@ -21,7 +21,7 @@ BENCHMARKS_BY_FORMAT = {
     "hdf5": "dynamic_routing_nwb_hdf5_v0",
     "zarr": "dynamic_routing_nwb_zarr_v0",
 }
-REMOTE_FILE_BACKENDS = ("remfile", "s3fs", "ros", "obstore")
+REMOTE_FILE_BACKENDS = ("remfile", "s3fs", "obstore")
 
 
 class MatrixSettings(pydantic_settings.BaseSettings):
@@ -144,6 +144,16 @@ def default_matrix() -> list[neurodatabench.matrix.MatrixRun]:
                 object_store_backend=backend,
             )
         )
+
+    runs.append(
+        neurodatabench.matrix.MatrixRun(
+            label="parquet-components-hdf5-polars-s3-anon",
+            implementation="implementations/parquet_components_template.py",
+            benchmark=BENCHMARKS_BY_FORMAT["hdf5"],
+            implementation_id="parquet_components",
+            object_store_backend="polars_s3_anon",
+        )
+    )
 
     for zarr_major, zarr_requirement in (("2", "zarr<3"), ("3", "zarr>=3,<4")):
         for backend in ("s3fs", "obstore"):
