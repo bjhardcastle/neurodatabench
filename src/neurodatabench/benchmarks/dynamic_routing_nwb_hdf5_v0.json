@@ -1,7 +1,7 @@
 {
   "id": "dynamic_routing_nwb_hdf5_v0",
   "nwb_format": "hdf5",
-  "timeout_seconds": 90,
+  "timeout_seconds": 120,
   "data_sources": [
     "s3://aind-scratch-data/dynamic-routing/cache/nwb/v0.0.273/664851_2023-11-15.nwb",
     "s3://aind-scratch-data/dynamic-routing/cache/nwb/v0.0.273/759434_2025-02-04.nwb",

@@ -1,7 +1,7 @@
 {
   "id": "dynamic_routing_nwb_zarr_v0",
   "nwb_format": "zarr",
-  "timeout_seconds": 90,
+  "timeout_seconds": 120,
   "data_sources": [
     "s3://aind-open-data/ecephys_664851_2023-11-15_12-38-21_nwb_2026-05-07_13-58-17/664851_2023-11-15.nwb.zarr",
     "s3://aind-open-data/ecephys_759434_2025-02-04_12-27-22_nwb_2026-05-07_13-56-38/759434_2025-02-04.nwb.zarr",
