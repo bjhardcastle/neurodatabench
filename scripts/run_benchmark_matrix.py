@@ -1,4 +1,15 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#   "pydantic>=2.13.4",
+#   "pydantic-settings>=2.14.1",
+#   "neurodatabench",
+# ]
+# [tool.uv.sources]
+# neurodatabench = { path = ".." }
+# ///
+
 """Run the default NeuroDataBench implementation matrix."""
 
 from __future__ import annotations
