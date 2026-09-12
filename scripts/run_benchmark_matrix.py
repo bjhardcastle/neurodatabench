@@ -21,7 +21,47 @@ from pathlib import Path
 import pydantic
 import pydantic_settings
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+
+def find_repo_root(script_path: Path) -> Path:
+    """Find the checkout containing the benchmark implementation scripts."""
+    script_dir = script_path.resolve().parent
+    candidates = (
+        script_dir,
+        script_dir / "neurodatabench",
+        *script_dir.parents,
+    )
+    for candidate in candidates:
+        if (candidate / "implementations").is_dir() and (
+            candidate / "pyproject.toml"
+        ).is_file():
+            return candidate
+    raise RuntimeError(f"Could not find the neurodatabench checkout from {script_path}")
+
+
+def normalize_cli_args(args: list[str]) -> list[str]:
+    """Translate explicit timeout booleans to Pydantic's implicit flag syntax."""
+    normalized: list[str] = []
+    index = 0
+    while index < len(args):
+        argument = args[index]
+        if argument == "--timeout-enabled" and index + 1 < len(args):
+            value = args[index + 1].lower()
+            if value in {"true", "false"}:
+                normalized.append("--timeout" if value == "true" else "--no-timeout")
+                index += 2
+                continue
+        if argument.startswith("--timeout-enabled="):
+            value = argument.partition("=")[2].lower()
+            if value in {"true", "false"}:
+                normalized.append("--timeout" if value == "true" else "--no-timeout")
+                index += 1
+                continue
+        normalized.append(argument)
+        index += 1
+    return normalized
+
+
+REPO_ROOT = find_repo_root(Path(__file__))
 REPO_SRC = REPO_ROOT / "src"
 if REPO_SRC.exists():
     sys.path.insert(0, REPO_SRC.as_posix())
@@ -74,7 +114,7 @@ class MatrixSettings(pydantic_settings.BaseSettings):
 
 def main() -> int:
     """Select and run entries from the default comparison matrix."""
-    args = MatrixSettings()
+    args = MatrixSettings(_cli_parse_args=normalize_cli_args(sys.argv[1:]))
     configure_logging(args.log_level)
     runs = neurodatabench.matrix.select_runs(
         default_matrix(),

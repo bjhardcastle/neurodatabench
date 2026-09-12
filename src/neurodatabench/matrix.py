@@ -159,7 +159,8 @@ def _command_for(
     log_level: str,
 ) -> list[str]:
     """Build the supervised command for one matrix run."""
-    child_command = ["uv", "run"]
+    python_version = f"{sys.version_info.major}.{sys.version_info.minor}"
+    child_command = ["uv", "run", "--python", python_version]
     for dependency in run.dependencies:
         child_command.extend(("--with", dependency))
     child_command.extend((run.implementation, "--log-level", log_level))

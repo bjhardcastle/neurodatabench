@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 import unittest.mock
@@ -15,6 +16,30 @@ import neurodatabench.runner
 
 class MatrixTests(unittest.TestCase):
     """Exercise matrix result classification and status artifacts."""
+
+    def test_child_uv_uses_matrix_python_version(self) -> None:
+        """Implementation environments should inherit the requested Python version."""
+        run = neurodatabench.matrix.MatrixRun(
+            label="reader",
+            implementation="implementation.py",
+            benchmark="benchmark",
+            implementation_id="reader",
+        )
+
+        command = neurodatabench.matrix._command_for(
+            run,
+            run_output_dir=Path("results"),
+            profile_interval_ms=None,
+            timeout_seconds=None,
+            no_timeout=True,
+            log_level="INFO",
+        )
+
+        expected_version = f"{sys.version_info.major}.{sys.version_info.minor}"
+        self.assertIn(
+            ["uv", "run", "--python", expected_version],
+            [command[index : index + 4] for index in range(len(command) - 3)],
+        )
 
     def test_timeout_is_recorded_as_benchmark_outcome(self) -> None:
         """A supervised timeout should not be reported as an orchestration failure."""

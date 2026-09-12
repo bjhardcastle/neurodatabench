@@ -62,6 +62,33 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
         self.assertIn("-- uv run", output)
         self.assertNotIn("uv run --timeout-seconds", output)
 
+    def test_explicit_false_disables_timeout(self) -> None:
+        """The capsule invocation's explicit boolean syntax should be accepted."""
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "scripts/run_benchmark_matrix.py",
+                "--dry-run",
+                "--limit",
+                "1",
+                "--timeout-enabled",
+                "false",
+            ],
+            check=False,
+            cwd=Path(__file__).resolve().parents[1],
+            capture_output=True,
+            text=True,
+        )
+
+        output = completed.stdout + completed.stderr
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("--no-timeout", output)
+        self.assertIn(
+            f"-- uv run --python {sys.version_info.major}.{sys.version_info.minor}",
+            output,
+        )
+        self.assertIn("implementations/lazynwb_template.py", output)
+
     def test_out_flag_sets_per_run_storage_root(self) -> None:
         """Matrix --out should forward unique helper output directories under a root."""
         with tempfile.TemporaryDirectory() as tmpdir:
