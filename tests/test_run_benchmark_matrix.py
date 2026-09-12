@@ -62,8 +62,8 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
         self.assertIn("-- uv run", output)
         self.assertNotIn("uv run --timeout-seconds", output)
 
-    def test_explicit_false_timeout_enabled_flag_disables_timeout(self) -> None:
-        """An explicit false timeout-enabled value should disable the supervisor."""
+    def test_explicit_timeout_disabled_flag_is_forwarded(self) -> None:
+        """Pydantic should parse an explicit timeout-disabled boolean value."""
         completed = subprocess.run(
             [
                 sys.executable,
@@ -71,8 +71,8 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
                 "--dry-run",
                 "--limit",
                 "1",
-                "--timeout-enabled",
-                "false",
+                "--timeout-disabled",
+                "true",
             ],
             check=False,
             cwd=Path(__file__).resolve().parents[1],
@@ -89,8 +89,8 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
         )
         self.assertIn("implementations/lazynwb_template.py", output)
 
-    def test_explicit_true_timeout_enabled_flag_keeps_timeout(self) -> None:
-        """An explicit true timeout-enabled value should keep the supervisor enabled."""
+    def test_explicit_false_keeps_timeout_enabled(self) -> None:
+        """A false timeout-disabled input should not disable the supervisor."""
         completed = subprocess.run(
             [
                 sys.executable,
@@ -98,8 +98,8 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
                 "--dry-run",
                 "--limit",
                 "1",
-                "--timeout-enabled",
-                "true",
+                "--timeout-disabled",
+                "false",
             ],
             check=False,
             cwd=Path(__file__).resolve().parents[1],
@@ -122,8 +122,8 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
                 "1",
                 "--profile_interval_ms",
                 "250",
-                "--timeout_enabled",
-                "false",
+                "--timeout_disabled",
+                "true",
             ],
             check=False,
             cwd=Path(__file__).resolve().parents[1],

@@ -61,7 +61,7 @@ class MatrixSettings(pydantic_settings.BaseSettings):
             "log-level": "log_level",
             "profile-interval-ms": "profile_interval_ms",
             "status-jsonl": "status_jsonl",
-            "timeout-enabled": "timeout_enabled",
+            "timeout-disabled": "timeout_disabled",
             "timeout-seconds": "timeout_seconds",
         },
         env_prefix="NDB_MATRIX_",
@@ -76,7 +76,7 @@ class MatrixSettings(pydantic_settings.BaseSettings):
     status_jsonl: Path | None = None
     profile_interval_ms: int | None = None
     timeout_seconds: float | None = None
-    timeout_enabled: pydantic_settings.CliExplicitFlag[bool] = True
+    timeout_disabled: pydantic_settings.CliExplicitFlag[bool] = False
     log_level: str = "INFO"
 
     @pydantic.field_validator("log_level")
@@ -109,7 +109,7 @@ def main() -> int:
         keep_going=args.keep_going,
         profile_interval_ms=args.profile_interval_ms,
         timeout_seconds=args.timeout_seconds,
-        no_timeout=not args.timeout_enabled,
+        no_timeout=args.timeout_disabled,
         log_level=args.log_level,
     )
 
