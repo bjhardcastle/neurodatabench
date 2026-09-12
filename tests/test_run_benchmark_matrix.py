@@ -63,7 +63,7 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
         self.assertNotIn("uv run --timeout-seconds", output)
 
     def test_explicit_timeout_disabled_flag_is_forwarded(self) -> None:
-        """Pydantic should parse an explicit timeout-disabled boolean value."""
+        """An explicit timeout-disabled value should bypass the supervisor."""
         completed = subprocess.run(
             [
                 sys.executable,
@@ -82,11 +82,11 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
 
         output = completed.stdout + completed.stderr
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertIn("--no-timeout", output)
         self.assertIn(
-            f"-- uv run --python {sys.version_info.major}.{sys.version_info.minor}",
+            f"DRY RUN: uv run --python {sys.version_info.major}.{sys.version_info.minor}",
             output,
         )
+        self.assertNotIn("neurodatabench.runner supervise", output)
         self.assertIn("implementations/lazynwb_template.py", output)
 
     def test_explicit_false_keeps_timeout_enabled(self) -> None:
@@ -109,7 +109,7 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
 
         output = completed.stdout + completed.stderr
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertNotIn("--no-timeout", output)
+        self.assertIn("neurodatabench.runner supervise", output)
 
     def test_snake_case_matrix_args_are_accepted(self) -> None:
         """Matrix inputs should accept snake case as well as canonical kebab case."""
@@ -134,7 +134,7 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
         output = completed.stdout + completed.stderr
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("--profile-interval-ms 250", output)
-        self.assertIn("--no-timeout", output)
+        self.assertNotIn("neurodatabench.runner supervise", output)
 
     def test_out_flag_sets_per_run_storage_root(self) -> None:
         """Matrix --out should forward unique helper output directories under a root."""
@@ -160,7 +160,10 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 0, completed.stderr)
             self.assertIn(f"--out {output_root}", output)
             self.assertIn(
-                "dynamic_routing_nwb_hdf5_v0/lazynwb_0_2_91_obstore_hdf5",
+                str(
+                    Path("dynamic_routing_nwb_hdf5_v0")
+                    / "lazynwb_0_2_91_obstore_hdf5"
+                ),
                 output,
             )
             self.assertIn("--timeout-profile-out", output)

@@ -158,7 +158,7 @@ def _command_for(
     no_timeout: bool,
     log_level: str,
 ) -> list[str]:
-    """Build the supervised command for one matrix run."""
+    """Build the implementation command, supervised when timeouts are enabled."""
     python_version = f"{sys.version_info.major}.{sys.version_info.minor}"
     child_command = ["uv", "run", "--python", python_version]
     for dependency in run.dependencies:
@@ -167,6 +167,10 @@ def _command_for(
     if profile_interval_ms is not None:
         child_command.extend(("--profile-interval-ms", str(profile_interval_ms)))
     child_command.extend(("--out", str(run_output_dir)))
+
+    if no_timeout:
+        logger.debug("Supervisor disabled for matrix run %s.", run.label)
+        return child_command
 
     command = [
         sys.executable,
@@ -178,8 +182,6 @@ def _command_for(
     ]
     if timeout_seconds is not None:
         command.extend(("--timeout-seconds", str(timeout_seconds)))
-    if no_timeout:
-        command.append("--no-timeout")
     command.extend(("--timeout-profile-out", str(run_output_dir), "--"))
     command.extend(child_command)
     return command
