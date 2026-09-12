@@ -22,18 +22,13 @@ from __future__ import annotations
 
 import logging
 import os
-import sys
 from collections.abc import Iterator, MutableMapping
-from pathlib import Path
 from typing import Any
 
-_REPO_SRC = Path(__file__).resolve().parents[1] / "src"
-if _REPO_SRC.exists():
-    sys.path.insert(0, _REPO_SRC.as_posix())
-
-import neurodatabench
 import numpy as np
 import zarr
+
+import neurodatabench
 
 logger = logging.getLogger(__name__)
 

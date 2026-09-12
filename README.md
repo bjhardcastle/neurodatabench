@@ -37,7 +37,7 @@ in the current directory. Pass `--out <path>` to use a different output director
 Preview the repository's default matrix without running the actual benchmarks:
 
 ```console
-uv run python scripts/run_benchmark_matrix.py --dry-run
+uv run --script scripts/run_benchmark_matrix.py --dry-run
 ```
 
 Custom matrices can reuse the package runner directly:

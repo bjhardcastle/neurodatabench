@@ -23,17 +23,12 @@ from __future__ import annotations
 
 import logging
 import os
-import sys
-from pathlib import Path
 from typing import Any
 
-_REPO_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, (_REPO_ROOT / "src").as_posix())
-sys.path.insert(0, _REPO_ROOT.as_posix())
-
-import neurodatabench
 import numpy as np
 from hdmf_zarr import NWBZarrIO
+
+import neurodatabench
 
 logger = logging.getLogger(__name__)
 state: dict[str, Any] = {}

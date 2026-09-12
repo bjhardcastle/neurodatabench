@@ -7,7 +7,7 @@
 #   "neurodatabench",
 # ]
 # [tool.uv.sources]
-# neurodatabench = { path = ".." }
+# neurodatabench = { git = "https://github.com/bjhardcastle/neurodatabench" }
 # ///
 
 """Run the default NeuroDataBench implementation matrix."""
@@ -15,11 +15,12 @@
 from __future__ import annotations
 
 import logging
-import sys
 from pathlib import Path
 
 import pydantic
 import pydantic_settings
+
+import neurodatabench.matrix
 
 
 def find_repo_root(script_path: Path) -> Path:
@@ -38,35 +39,7 @@ def find_repo_root(script_path: Path) -> Path:
     raise RuntimeError(f"Could not find the neurodatabench checkout from {script_path}")
 
 
-def normalize_cli_args(args: list[str]) -> list[str]:
-    """Translate explicit timeout booleans to Pydantic's implicit flag syntax."""
-    normalized: list[str] = []
-    index = 0
-    while index < len(args):
-        argument = args[index]
-        if argument == "--timeout-enabled" and index + 1 < len(args):
-            value = args[index + 1].lower()
-            if value in {"true", "false"}:
-                normalized.append("--timeout" if value == "true" else "--no-timeout")
-                index += 2
-                continue
-        if argument.startswith("--timeout-enabled="):
-            value = argument.partition("=")[2].lower()
-            if value in {"true", "false"}:
-                normalized.append("--timeout" if value == "true" else "--no-timeout")
-                index += 1
-                continue
-        normalized.append(argument)
-        index += 1
-    return normalized
-
-
 REPO_ROOT = find_repo_root(Path(__file__))
-REPO_SRC = REPO_ROOT / "src"
-if REPO_SRC.exists():
-    sys.path.insert(0, REPO_SRC.as_posix())
-
-import neurodatabench.matrix
 
 BENCHMARKS_BY_FORMAT = {
     "hdf5": "dynamic_routing_nwb_hdf5_v0",
@@ -82,6 +55,15 @@ class MatrixSettings(pydantic_settings.BaseSettings):
         cli_implicit_flags=True,
         cli_kebab_case=True,
         cli_parse_args=True,
+        cli_shortcuts={
+            "dry-run": "dry_run",
+            "keep-going": "keep_going",
+            "log-level": "log_level",
+            "profile-interval-ms": "profile_interval_ms",
+            "status-jsonl": "status_jsonl",
+            "timeout-disabled": "timeout_disabled",
+            "timeout-seconds": "timeout_seconds",
+        },
         env_prefix="NDB_MATRIX_",
     )
 
@@ -94,7 +76,7 @@ class MatrixSettings(pydantic_settings.BaseSettings):
     status_jsonl: Path | None = None
     profile_interval_ms: int | None = None
     timeout_seconds: float | None = None
-    timeout_enabled: bool = pydantic.Field(default=True, alias="timeout")
+    timeout_disabled: pydantic_settings.CliExplicitFlag[bool] = False
     log_level: str = "INFO"
 
     @pydantic.field_validator("log_level")
@@ -106,15 +88,10 @@ class MatrixSettings(pydantic_settings.BaseSettings):
             raise ValueError(f"Unsupported log level: {value}")
         return normalized
 
-    @property
-    def no_timeout(self) -> bool:
-        """Return whether supervisor timeout enforcement is disabled."""
-        return not self.timeout_enabled
-
 
 def main() -> int:
     """Select and run entries from the default comparison matrix."""
-    args = MatrixSettings(_cli_parse_args=normalize_cli_args(sys.argv[1:]))
+    args = MatrixSettings()
     configure_logging(args.log_level)
     runs = neurodatabench.matrix.select_runs(
         default_matrix(),
@@ -132,7 +109,7 @@ def main() -> int:
         keep_going=args.keep_going,
         profile_interval_ms=args.profile_interval_ms,
         timeout_seconds=args.timeout_seconds,
-        no_timeout=args.no_timeout,
+        no_timeout=args.timeout_disabled,
         log_level=args.log_level,
     )
 
@@ -244,4 +221,4 @@ def default_matrix() -> list[neurodatabench.matrix.MatrixRun]:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

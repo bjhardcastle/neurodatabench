@@ -62,8 +62,8 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
         self.assertIn("-- uv run", output)
         self.assertNotIn("uv run --timeout-seconds", output)
 
-    def test_explicit_false_disables_timeout(self) -> None:
-        """The capsule invocation's explicit boolean syntax should be accepted."""
+    def test_explicit_timeout_disabled_flag_is_forwarded(self) -> None:
+        """Pydantic should parse an explicit timeout-disabled boolean value."""
         completed = subprocess.run(
             [
                 sys.executable,
@@ -71,8 +71,8 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
                 "--dry-run",
                 "--limit",
                 "1",
-                "--timeout-enabled",
-                "false",
+                "--timeout-disabled",
+                "true",
             ],
             check=False,
             cwd=Path(__file__).resolve().parents[1],
@@ -88,6 +88,53 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
             output,
         )
         self.assertIn("implementations/lazynwb_template.py", output)
+
+    def test_explicit_false_keeps_timeout_enabled(self) -> None:
+        """A false timeout-disabled input should not disable the supervisor."""
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "scripts/run_benchmark_matrix.py",
+                "--dry-run",
+                "--limit",
+                "1",
+                "--timeout-disabled",
+                "false",
+            ],
+            check=False,
+            cwd=Path(__file__).resolve().parents[1],
+            capture_output=True,
+            text=True,
+        )
+
+        output = completed.stdout + completed.stderr
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertNotIn("--no-timeout", output)
+
+    def test_snake_case_matrix_args_are_accepted(self) -> None:
+        """Matrix inputs should accept snake case as well as canonical kebab case."""
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "scripts/run_benchmark_matrix.py",
+                "--dry_run",
+                "--limit",
+                "1",
+                "--profile_interval_ms",
+                "250",
+                "--timeout_disabled",
+                "true",
+            ],
+            check=False,
+            cwd=Path(__file__).resolve().parents[1],
+            capture_output=True,
+            text=True,
+        )
+
+        output = completed.stdout + completed.stderr
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("--profile-interval-ms 250", output)
+        self.assertIn("--no-timeout", output)
 
     def test_out_flag_sets_per_run_storage_root(self) -> None:
         """Matrix --out should forward unique helper output directories under a root."""
@@ -193,6 +240,23 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
                 script = script_path.read_text(encoding="utf-8")
                 markers = re.findall(r"^# ///(?: script)?$", script, flags=re.MULTILINE)
                 self.assertEqual(markers, ["# /// script", "# ///"])
+
+    def test_runnable_scripts_install_neurodatabench_from_github(self) -> None:
+        """Benchmark processes should not shadow the declared GitHub dependency."""
+        repo_root = Path(__file__).resolve().parents[1]
+        script_paths = [
+            repo_root / "scripts" / "run_benchmark_matrix.py",
+            *(repo_root / "implementations").glob("*.py"),
+        ]
+
+        for script_path in script_paths:
+            with self.subTest(script=script_path.name):
+                script = script_path.read_text(encoding="utf-8")
+                self.assertIn(
+                    'neurodatabench = { git = "https://github.com/bjhardcastle/neurodatabench" }',
+                    script,
+                )
+                self.assertNotIn("sys.path.insert", script)
 
 
 if __name__ == "__main__":
