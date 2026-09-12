@@ -68,6 +68,7 @@ def setup(context: neurodatabench.RunContext) -> None:
         context.benchmark.data_sources,
         "/units",
         disable_progress=True,
+        infer_schema_length=1,
     )
     state["trials"] = lazynwb.scan_nwb(
         context.benchmark.data_sources,
@@ -89,7 +90,10 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
             case "multisession_units_metadata_query":
                 answer = int(
                     state["units"]
-                    .filter((pl.col("structure") == "VISp") & pl.col("default_qc"))
+                    .filter(
+                        pl.col("structure").eq("VISp"),
+                        pl.col("default_qc"),
+                    )
                     .select(pl.len().alias("count"))
                     .collect()
                     .item()
@@ -98,7 +102,7 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
                 visp_units = (
                     state["units"]
                     .filter(
-                        pl.col("structure") == "VISp",
+                        pl.col("structure").eq("VISp"),
                         pl.col("firing_rate").is_not_null(),
                     )
                     .sort("firing_rate", descending=True)
