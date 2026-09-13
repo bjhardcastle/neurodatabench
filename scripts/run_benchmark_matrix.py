@@ -78,7 +78,7 @@ class MatrixSettings(pydantic_settings.BaseSettings):
     status_jsonl: Path | None = None
     profile_interval_ms: int | None = None
     timeout_seconds: float | None = None
-    timeout_disabled: pydantic_settings.CliExplicitFlag[bool] = False
+    timeout_disabled: bool = False
     log_level: str = "INFO"
 
     @pydantic.field_validator("log_level")

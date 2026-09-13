@@ -62,8 +62,8 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
         self.assertIn("-- uv run", output)
         self.assertNotIn("uv run --timeout-seconds", output)
 
-    def test_explicit_timeout_disabled_flag_is_forwarded(self) -> None:
-        """An explicit timeout-disabled value should bypass the supervisor."""
+    def test_timeout_disabled_flag_is_forwarded(self) -> None:
+        """The timeout-disabled flag should bypass the supervisor."""
         completed = subprocess.run(
             [
                 sys.executable,
@@ -72,7 +72,6 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
                 "--limit",
                 "1",
                 "--timeout-disabled",
-                "true",
             ],
             check=False,
             cwd=Path(__file__).resolve().parents[1],
@@ -89,8 +88,8 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
         self.assertNotIn("neurodatabench.runner supervise", output)
         self.assertIn("implementations/lazynwb_template.py", output)
 
-    def test_explicit_false_keeps_timeout_enabled(self) -> None:
-        """A false timeout-disabled input should not disable the supervisor."""
+    def test_timeout_enabled_by_default(self) -> None:
+        """Omitting timeout-disabled should keep the supervisor enabled."""
         completed = subprocess.run(
             [
                 sys.executable,
@@ -98,8 +97,6 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
                 "--dry-run",
                 "--limit",
                 "1",
-                "--timeout-disabled",
-                "false",
             ],
             check=False,
             cwd=Path(__file__).resolve().parents[1],
@@ -110,6 +107,26 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
         output = completed.stdout + completed.stderr
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("neurodatabench.runner supervise", output)
+
+    def test_timeout_disabled_rejects_explicit_value(self) -> None:
+        """The timeout-disabled option should be a presence-only flag."""
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "scripts/run_benchmark_matrix.py",
+                "--dry-run",
+                "--limit",
+                "1",
+                "--timeout-disabled",
+                "true",
+            ],
+            check=False,
+            cwd=Path(__file__).resolve().parents[1],
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertNotEqual(completed.returncode, 0)
 
     def test_snake_case_matrix_args_are_accepted(self) -> None:
         """Matrix inputs should accept snake case as well as canonical kebab case."""
@@ -123,7 +140,6 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
                 "--profile_interval_ms",
                 "250",
                 "--timeout_disabled",
-                "true",
             ],
             check=False,
             cwd=Path(__file__).resolve().parents[1],
