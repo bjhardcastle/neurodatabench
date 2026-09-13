@@ -49,10 +49,9 @@ from neurodatabench.matrix import MatrixRun, run_matrix
 
 runs = [
     MatrixRun(
-        label="my-reader",
         implementation="implementations/my_reader.py",
         benchmark="dynamic_routing_nwb_hdf5_v0",
-        implementation_id="my_reader_1",
+        implementation_id="my-reader.1",
         object_store_backend="s3fs",
         dependencies=("my-reader==1.0",),
     )
@@ -62,3 +61,5 @@ raise SystemExit(run_matrix(runs, repo_root=Path.cwd()))
 ```
 
 Note that different versions of python dependencies can be specified in the matrix for comparison.
+The `implementation_id` is the run's name used for filtering, logs, and metadata. It may contain
+dots; punctuation is sanitized when it is used as a result-directory name.

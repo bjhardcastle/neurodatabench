@@ -6,6 +6,7 @@ import dataclasses
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import time
@@ -20,9 +21,12 @@ logger = logging.getLogger(__name__)
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class MatrixRun:
-    """One implementation and environment combination in a benchmark matrix."""
+    """One implementation and environment combination in a benchmark matrix.
 
-    label: str
+    ``implementation_id`` is the logical run name used in logs and metadata.
+    Its filesystem representation is sanitized when building output paths.
+    """
+
     implementation: str
     benchmark: str
     implementation_id: str
@@ -38,12 +42,12 @@ def select_runs(
     only: Sequence[str] = (),
     skip: Sequence[str] = (),
 ) -> list[MatrixRun]:
-    """Filter matrix runs by label substrings while preserving order."""
+    """Filter matrix runs by implementation-name substrings while preserving order."""
     return [
         run
         for run in runs
-        if (not only or any(token in run.label for token in only))
-        and not any(token in run.label for token in skip)
+        if (not only or any(token in run.implementation_id for token in only))
+        and not any(token in run.implementation_id for token in skip)
     ]
 
 
@@ -79,7 +83,7 @@ def run_matrix(
     timeouts = 0
     logger.info("Starting %d matrix run(s).", len(runs))
     for index, run in enumerate(runs, start=1):
-        logger.info("Starting %d/%d: %s", index, len(runs), run.label)
+        logger.info("Starting %d/%d: %s", index, len(runs), run.implementation_id)
         run_output_dir = _run_output_dir(run, output_root)
         command = _command_for(
             run,
@@ -113,17 +117,21 @@ def run_matrix(
 
         if result["outcome"] == "timed_out":
             timeouts += 1
-            logger.warning("Timed out %s.", run.label)
+            logger.warning("Timed out %s.", run.implementation_id)
         elif result["outcome"] == "failed":
             failures += 1
             logger.error(
-                "Failed %s with exit code %s.", run.label, result["returncode"]
+                "Failed %s with exit code %s.",
+                run.implementation_id,
+                result["returncode"],
             )
             if not keep_going:
                 return int(result["returncode"])
         else:
             logger.info(
-                "Finished %s in %.3f seconds.", run.label, result["elapsed_seconds"]
+                "Finished %s in %.3f seconds.",
+                run.implementation_id,
+                result["elapsed_seconds"],
             )
 
     if failures:
@@ -169,7 +177,7 @@ def _command_for(
     child_command.extend(("--out", str(run_output_dir)))
 
     if no_timeout:
-        logger.debug("Supervisor disabled for matrix run %s.", run.label)
+        logger.debug("Supervisor disabled for matrix run %s.", run.implementation_id)
         return child_command
 
     command = [
@@ -189,7 +197,17 @@ def _command_for(
 
 def _run_output_dir(run: MatrixRun, output_root: Path) -> Path:
     """Return the output directory for one matrix run."""
-    return output_root / run.benchmark / run.implementation_id
+    return output_root / run.benchmark / _safe_folder_name(run.implementation_id)
+
+
+def _safe_folder_name(name: str) -> str:
+    """Convert an implementation name into a filesystem-safe folder name."""
+    safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", name).strip("_ .")
+    if not safe_name:
+        raise ValueError(f"Implementation name {name!r} has no safe folder name")
+    if safe_name.upper() in {"CON", "PRN", "AUX", "NUL"}:
+        safe_name = f"_{safe_name}"
+    return safe_name
 
 
 def _environment_for(run: MatrixRun, *, output_root: Path) -> dict[str, str]:
@@ -214,7 +232,9 @@ def _environment_for(run: MatrixRun, *, output_root: Path) -> dict[str, str]:
     if run.local_cache is not None:
         environment["NDB_LOCAL_CACHE"] = run.local_cache
     if Path(run.implementation).name == "lazynwb_template.py":
-        cache_id = run.implementation_id.removesuffix("_cold").removesuffix("_warm")
+        cache_id = _safe_folder_name(
+            run.implementation_id.removesuffix("_cold").removesuffix("_warm")
+        )
         environment["NDB_LAZYNWB_CACHE_PATH"] = str(
             output_root / "matrix_caches" / f"{cache_id}.sqlite"
         )
