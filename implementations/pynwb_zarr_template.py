@@ -112,15 +112,20 @@ def _count_visp_default_qc(file_records: list[dict[str, Any]]) -> int:
     """Count VISp units passing default QC across opened PyNWB NWBFiles."""
     count = 0
     for file_record in file_records:
-        if "units_frame" not in file_record:
+        if "unit_metrics" not in file_record:
             nwb_file = file_record["nwb_file"]
             if nwb_file.units is None:
                 raise ValueError(f"NWBFile {nwb_file.identifier} does not contain units.")
-            file_record["units_table"] = nwb_file.units
-            file_record["units_frame"] = nwb_file.units.to_dataframe(
-                exclude={"spike_times"},
+            file_record["units"] = nwb_file.units
+            file_record["unit_metrics"] = nwb_file.units.to_dataframe(
+                exclude={
+                    "spike_times",
+                    "spike_amplitudes",
+                    "waveform_mean",
+                    "waveform_std",
+                },
             )
-        units = file_record["units_frame"]
+        units = file_record["unit_metrics"]
         structure = _string_array(units["structure"])
         default_qc = np.asarray(units["default_qc"], dtype=np.bool_)
         count += int(np.count_nonzero((structure == "VISp") & default_qc))
@@ -134,14 +139,19 @@ def _longest_isi_for_fastest_visp_unit(file_records: list[dict[str, Any]]) -> fl
     top_firing_rate = -np.inf
     for file_record in file_records:
         nwb_file = file_record["nwb_file"]
-        if "units_frame" not in file_record:
+        if "unit_metrics" not in file_record:
             if nwb_file.units is None:
                 raise ValueError(f"NWBFile {nwb_file.identifier} does not contain units.")
-            file_record["units_table"] = nwb_file.units
-            file_record["units_frame"] = nwb_file.units.to_dataframe(
-                exclude={"spike_times"},
+            file_record["units"] = nwb_file.units
+            file_record["unit_metrics"] = nwb_file.units.to_dataframe(
+                exclude={
+                    "spike_times",
+                    "spike_amplitudes",
+                    "waveform_mean",
+                    "waveform_std",
+                },
             )
-        units = file_record["units_frame"]
+        units = file_record["unit_metrics"]
         structure = _string_array(units["structure"])
         firing_rate = np.asarray(units["firing_rate"], dtype=np.float64)
         candidate_rows = np.flatnonzero((structure == "VISp") & ~np.isnan(firing_rate))
@@ -157,7 +167,7 @@ def _longest_isi_for_fastest_visp_unit(file_records: list[dict[str, Any]]) -> fl
     if top_file_record is None:
         raise ValueError("No VISp unit with a finite firing_rate was found.")
     spike_times = np.asarray(
-        top_file_record["units_table"].get_unit_spike_times(top_row),
+        top_file_record["units"].get_unit_spike_times(top_row),
         dtype=np.float64,
     )
     return float(np.diff(spike_times).max())
