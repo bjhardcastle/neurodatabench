@@ -4,3 +4,4 @@
 - [x] the various lazynwb implementations or zarr implementations should be almost identical - version should be managed from outside in matrix runner, and any different config/behaviors switched in implementation .py based on package version
 - [ ] each implementation should use neurodatabench from source
 - [ ] leaderboard should ingest new results automatically and allow exploration of individual implementations. Need a mechanism for tool developers to submit new results via github.
+- [ ] capture machine specs (memory, cpu, num cores etc.)
