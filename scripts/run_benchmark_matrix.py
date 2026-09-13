@@ -44,7 +44,7 @@ BENCHMARKS_BY_FORMAT = {
     "hdf5": "dynamic_routing_nwb_hdf5_v0",
     "zarr": "dynamic_routing_nwb_zarr_v0",
 }
-REMOTE_FILE_BACKENDS = ("remfile", "s3fs", "obstore")
+H5PY_REMOTE_FILE_BACKENDS = ("remfile", "s3fs", "obstore")
 CACHE_STATUSES: tuple[neurodatabench.models.LocalCacheState, ...] = ("cold",)
 
 
@@ -159,7 +159,7 @@ def default_matrix() -> list[neurodatabench.matrix.MatrixRun]:
                 )
             )
 
-    for backend in REMOTE_FILE_BACKENDS:
+    for backend in H5PY_REMOTE_FILE_BACKENDS:
         runs.append(
             neurodatabench.matrix.MatrixRun(
                 implementation="implementations/direct_h5py_template.py",
@@ -191,7 +191,7 @@ def default_matrix() -> list[neurodatabench.matrix.MatrixRun]:
         )
     )
 
-    for backend in REMOTE_FILE_BACKENDS:
+    for backend in H5PY_REMOTE_FILE_BACKENDS:
         runs.append(
             neurodatabench.matrix.MatrixRun(
                 implementation="implementations/pynwb_hdf5_template.py",
