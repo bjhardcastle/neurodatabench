@@ -12,6 +12,7 @@ except importlib.metadata.PackageNotFoundError:
     __version__ = "unknown"
 
 import neurodatabench.models as models
+import neurodatabench.logging_utils as logging_utils
 import neurodatabench.validation as validation
 from neurodatabench.models import (
     AnswerSubmissionTiming,
@@ -54,8 +55,12 @@ __all__ = [
     "RunTimings",
     "__version__",
     "main",
+    "get_logger",
+    "logging_utils",
     "models",
     "validation",
 ]
 
 logging.getLogger(__name__).addHandler(logging.NullHandler())
+
+get_logger = logging_utils.get_logger

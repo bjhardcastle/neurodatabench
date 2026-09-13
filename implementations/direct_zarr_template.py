@@ -20,7 +20,6 @@
 
 from __future__ import annotations
 
-import logging
 import os
 from collections.abc import Iterator, MutableMapping
 from typing import Any
@@ -30,7 +29,7 @@ import zarr
 
 import neurodatabench
 
-logger = logging.getLogger(__name__)
+logger = neurodatabench.get_logger(__name__)
 
 _DEFAULT_BACKEND = "s3fs"
 _DEFAULT_BENCHMARK = "dynamic_routing_nwb_zarr_v0"

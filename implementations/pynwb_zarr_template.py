@@ -21,7 +21,6 @@
 
 from __future__ import annotations
 
-import logging
 import os
 from typing import Any
 
@@ -30,7 +29,7 @@ from hdmf_zarr import NWBZarrIO
 
 import neurodatabench
 
-logger = logging.getLogger(__name__)
+logger = neurodatabench.get_logger(__name__)
 state: dict[str, Any] = {}
 _DEFAULT_BACKEND = "s3fs"
 _DEFAULT_BENCHMARK = "dynamic_routing_nwb_zarr_v0"

@@ -20,7 +20,6 @@
 from __future__ import annotations
 
 import functools
-import logging
 import os
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -33,7 +32,7 @@ import remfile
 
 import neurodatabench
 
-logger = logging.getLogger(__name__)
+logger = neurodatabench.get_logger(__name__)
 
 _DEFAULT_BENCHMARK = "dynamic_routing_nwb_hdf5_v0"
 _DEFAULT_COMPONENT_BASE_URL = (

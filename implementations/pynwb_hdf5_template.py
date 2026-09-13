@@ -22,7 +22,6 @@
 
 from __future__ import annotations
 
-import logging
 import os
 from typing import Any
 from urllib.parse import quote
@@ -34,7 +33,7 @@ import remfile
 
 import neurodatabench
 
-logger = logging.getLogger(__name__)
+logger = neurodatabench.get_logger(__name__)
 
 state: dict[str, Any] = {}
 

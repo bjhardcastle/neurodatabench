@@ -16,6 +16,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from collections.abc import Callable, Sequence
@@ -29,6 +30,7 @@ import pydantic
 import pydantic_settings
 
 import neurodatabench.benchmarks
+import neurodatabench.logging_utils
 import neurodatabench.models
 import neurodatabench.plots
 import neurodatabench.validation
@@ -61,6 +63,7 @@ class _RunConfig(pydantic_settings.BaseSettings):
     fail_fast: bool = False
     profile_interval_ms: int = pydantic.Field(default=250, gt=0)
     log_level: str = "INFO"
+    log_file: Path | None = None
 
     @pydantic.field_validator("log_level")
     @classmethod
@@ -252,6 +255,7 @@ def main(
     out: str | Path | None = None,
     implementation_script: str | Path | None = None,
     log_level: str | None = None,
+    log_file: str | Path | None = None,
     fail_fast: bool | None = None,
     clear_cache: Callable[[neurodatabench.models.RunContext], None] | None = None,
     teardown: Callable[[neurodatabench.models.RunContext], None] | None = None,
@@ -271,10 +275,10 @@ def main(
         default_out=out,
         default_implementation_script=implementation_script,
         default_log_level=log_level,
+        default_log_file=log_file,
         default_fail_fast=fail_fast,
         argv=argv,
     )
-    _configure_logging(config.log_level)
     if config.fail_fast:
         logger.warning(
             "Fail-fast answer validation is enabled. Use it during development only, "
@@ -297,6 +301,32 @@ def main(
             implementation_id=implementation_id,
         )
     )
+    staged_log_path: Path | None = None
+    log_path = config.log_file
+    if log_path is None:
+        staged_fd, staged_name = tempfile.mkstemp(
+            prefix="neurodatabench-",
+            suffix=".log",
+        )
+        os.close(staged_fd)
+        staged_log_path = Path(staged_name)
+        log_path = staged_log_path
+    logging_session = neurodatabench.logging_utils.configure(
+        console_level=config.log_level,
+        file_path=log_path,
+    )
+
+    def finish_logging(*, successful: bool) -> None:
+        """Flush the run log and publish or discard its default staging file."""
+        if logging_session is not None:
+            logging_session.close()
+        if staged_log_path is None:
+            return
+        if successful:
+            out_dir.mkdir(parents=True, exist_ok=True)
+            shutil.move(staged_log_path, out_dir / "run.log")
+        elif staged_log_path.exists():
+            staged_log_path.unlink()
     submitted_answers: list[dict[str, Any]] = []
     run_start_ns: int | None = None
     run_start_wall_time_ns = 0
@@ -357,7 +387,11 @@ def main(
 
     if clear_cache is not None:
         logger.debug("Running untimed clear_cache.")
-        clear_cache(context)
+        try:
+            clear_cache(context)
+        except BaseException:
+            finish_logging(successful=False)
+            raise
 
     profiler.start()
     try:
@@ -390,6 +424,8 @@ def main(
         if teardown is not None:
             logger.debug("Running untimed teardown.")
             teardown(context)
+        if sys.exc_info()[0] is not None and logging_session is not None:
+            finish_logging(successful=False)
 
     timings = neurodatabench.models.RunTimings(
         setup_duration_ns=setup_duration_ns,
@@ -420,6 +456,7 @@ def main(
             submitted_answers,
         )
     except neurodatabench.validation.BenchmarkValidationError as error:
+        finish_logging(successful=False)
         raise SystemExit(str(error)) from None
     validation = {"correct": True}
     metadata = _run_metadata(
@@ -428,23 +465,26 @@ def main(
         benchmark=loaded_benchmark,
         implementation_script_path=implementation_script_path,
     )
-    _write_result_artifacts(
-        out_dir=out_dir,
-        raw_benchmark=raw_benchmark,
-        metadata=metadata,
-        implementation_script_path=implementation_script_path,
-        timings=timings,
-        validation=validation,
-        profile_samples=profiler.samples,
-        profile_summary=profiler.summary(),
-        run_start_wall_time_ns=run_start_wall_time_ns,
-    )
-    logger.info(
-        "Benchmark run completed in %.3f s (setup %.3f s, submit_answers %.3f s).",
-        total_duration_ns / 1_000_000_000,
-        setup_duration_ns / 1_000_000_000,
-        submit_answers_duration_ns / 1_000_000_000,
-    )
+    try:
+        _write_result_artifacts(
+            out_dir=out_dir,
+            raw_benchmark=raw_benchmark,
+            metadata=metadata,
+            implementation_script_path=implementation_script_path,
+            timings=timings,
+            validation=validation,
+            profile_samples=profiler.samples,
+            profile_summary=profiler.summary(),
+            run_start_wall_time_ns=run_start_wall_time_ns,
+        )
+        logger.info(
+            "Benchmark run completed in %.3f s (setup %.3f s, submit_answers %.3f s).",
+            total_duration_ns / 1_000_000_000,
+            setup_duration_ns / 1_000_000_000,
+            submit_answers_duration_ns / 1_000_000_000,
+        )
+    finally:
+        finish_logging(successful=True)
 
 
 def _resolve_config(
@@ -452,6 +492,7 @@ def _resolve_config(
     default_benchmark: str | Path | None,
     default_out: str | Path | None,
     default_log_level: str | None,
+    default_log_file: str | Path | None = None,
     argv: Sequence[str] | None,
     default_fail_fast: bool | None = None,
     default_implementation_script: str | Path | None = None,
@@ -468,6 +509,8 @@ def _resolve_config(
         )
     if default_log_level is not None:
         settings_kwargs["log_level"] = default_log_level
+    if default_log_file is not None:
+        settings_kwargs["log_file"] = Path(default_log_file)
     if default_fail_fast is not None:
         settings_kwargs["fail_fast"] = default_fail_fast
     config = _RunConfig(
@@ -482,13 +525,6 @@ def _resolve_config(
 def _default_output_dir(*, benchmark_id: str, implementation_id: str) -> Path:
     """Return a benchmark-scoped implementation directory beneath results."""
     return Path.cwd() / "results" / benchmark_id / implementation_id
-
-
-def _configure_logging(log_level: str) -> None:
-    """Configure package logging for a benchmark run."""
-    level = logging.getLevelNamesMapping()[log_level]
-    logging.basicConfig(level=level)
-    logging.getLogger("neurodatabench").setLevel(level)
 
 
 def _load_benchmark(

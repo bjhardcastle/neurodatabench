@@ -16,6 +16,12 @@ The `.py` file contains code to fetch data from the files specified in a benchma
 
 Upon completion, profiling results are written to `results/<benchmark_id>/<implementation_id>`
 in the current directory. Pass `--out <path>` to use a different output directory.
+Each run also writes `<out>/run.log` by default. The file contains package and
+implementation log records at DEBUG level; use `--log-file <path>` to override its
+location and `--log-level INFO` (the default) to control console output. Matrix runs
+inherit this behavior because each child receives its own `--out` directory.
+Implementation templates should use `logger = neurodatabench.get_logger(__name__)` for
+diagnostic logging. The runner does not capture arbitrary `print()` output.
 
 ### Create your own implementation or improve an existing one
 

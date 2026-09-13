@@ -17,7 +17,6 @@
 from __future__ import annotations
 
 import importlib.metadata
-import logging
 import os
 import tempfile
 from pathlib import Path
@@ -29,7 +28,7 @@ import polars as pl
 
 import neurodatabench
 
-logger = logging.getLogger(__name__)
+logger = neurodatabench.get_logger(__name__)
 
 state: dict[str, Any] = {}
 
