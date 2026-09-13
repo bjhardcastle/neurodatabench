@@ -985,7 +985,7 @@ def _leaderboard_rows(results_dir: Path) -> list[neurodatabench.models.JsonObjec
     for row in rows:
         row["leaderboard_label"] = (
             f"{row['implementation_id']} "
-            f"({row['benchmark_id']}, {row['datetime_utc']})"
+            f"({row['datetime_utc']})"
         )
     return rows
 

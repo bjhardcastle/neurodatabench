@@ -198,17 +198,24 @@ def _leaderboard_timing_chart(
     elapsed_limit: float | None,
 ) -> alt.LayerChart:
     """Return aligned timing lanes broken into setup and individual answers."""
-    y_sort = [str(row["leaderboard_label"]) for row in rows]
+    benchmark_sort = list(
+        dict.fromkeys(str(row["benchmark_id"]) for row in timing_rows)
+    )
+    label_sort = [str(row["leaderboard_label"]) for row in rows]
     stage_order = list(dict.fromkeys(str(row["stage"]) for row in timing_rows))
     stage_colors = [
         _LEADERBOARD_SERIES_COLORS[index % len(_LEADERBOARD_SERIES_COLORS)]
         for index in range(len(stage_order))
     ]
     y_encoding = alt.Y(
-        "leaderboard_label:N",
-        title=None,
-        sort=y_sort,
+        "benchmark_id:N",
+        title="benchmark",
+        sort=benchmark_sort,
         axis=alt.Axis(labelLimit=280),
+    )
+    y_offset_encoding = alt.YOffset(
+        "leaderboard_label:N",
+        sort=label_sort,
     )
     source = alt.Data(values=timing_rows)
     x_scale = alt.Scale(domain=[0.0, elapsed_limit]) if elapsed_limit else alt.Scale()
@@ -219,6 +226,7 @@ def _leaderboard_timing_chart(
             x=alt.X("start_seconds:Q", title="elapsed seconds", scale=x_scale),
             x2="stop_seconds:Q",
             y=y_encoding,
+            yOffset=y_offset_encoding,
             color=alt.Color(
                 "stage:N",
                 title="stage",
@@ -248,6 +256,17 @@ def _leaderboard_timing_chart(
             )
         )
     )
+    lane_labels = (
+        alt.Chart(source)
+        .transform_filter("datum.stage === 'total'")
+        .mark_text(align="left", baseline="middle", dx=6, fontSize=11)
+        .encode(
+            x=alt.value(0),
+            y=y_encoding,
+            yOffset=y_offset_encoding,
+            text=alt.Text("leaderboard_label:N"),
+        )
+    )
     elapsed_labels = (
         alt.Chart(source)
         .transform_filter("datum.elapsed_label !== ''")
@@ -262,10 +281,11 @@ def _leaderboard_timing_chart(
         .encode(
             x=alt.X("annotation_seconds:Q"),
             y=y_encoding,
+            yOffset=y_offset_encoding,
             text=alt.Text("elapsed_label:N"),
         )
     )
-    return alt.layer(bars, elapsed_labels).properties(
+    return alt.layer(bars, lane_labels, elapsed_labels).properties(
         title="Stage durations",
         width=904,
         height=max(120, min(30 * len(rows), 720)),
