@@ -10,6 +10,7 @@ import importlib.resources
 import inspect
 import json
 import logging
+import os
 import platform
 import shutil
 import socket
@@ -565,6 +566,7 @@ def _cli(argv: Sequence[str] | None = None) -> int:
             command,
             timeout_seconds=timeout_seconds,
             timeout_profile_out=args.timeout_profile_out,
+            benchmark_source=args.benchmark,
         )
     parser.error(f"unsupported command: {args.command_name}")
 
@@ -610,6 +612,7 @@ def _run_supervised_command(
     *,
     timeout_seconds: float | None,
     timeout_profile_out: Path | None = None,
+    benchmark_source: str | None = None,
 ) -> int:
     """Run a subprocess and kill it if the process-level timeout expires."""
     logger.debug("Starting supervised command: %s", " ".join(command))
@@ -637,19 +640,63 @@ def _run_supervised_command(
             _write_timeout_profile_artifacts(
                 out_dir=timeout_profile_out,
                 profiler=profiler,
+                elapsed_seconds=elapsed_seconds,
+                timeout_seconds=timeout_seconds,
+                benchmark_source=benchmark_source,
             )
         logger.error("Benchmark timed out at %.3f seconds.", elapsed_seconds)
         return SUPERVISOR_TIMEOUT_EXIT_CODE
 
 
-def _write_timeout_profile_artifacts(*, out_dir: Path, profiler: _Profiler) -> None:
-    """Persist supervisor-owned resource data after terminating a timed-out run."""
+def _write_timeout_profile_artifacts(
+    *,
+    out_dir: Path,
+    profiler: _Profiler,
+    elapsed_seconds: float,
+    timeout_seconds: float | None,
+    benchmark_source: str | None,
+) -> None:
+    """Persist all available artifacts after terminating a timed-out run."""
     logger.debug("Writing timeout profile artifacts to %s.", out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     summary = profiler.summary()
     summary["profiler_scope"] = "supervised_process_tree"
     _write_jsonl(out_dir / "profile_samples.jsonl", profiler.samples)
     _write_json(out_dir / "profile_summary.json", summary)
+    if benchmark_source is not None:
+        raw_benchmark, benchmark = _load_benchmark(benchmark_source)
+        local_cache_value = os.environ.get("NDB_LOCAL_CACHE")
+        local_cache: neurodatabench.models.LocalCacheState | None = None
+        if local_cache_value == "cold":
+            local_cache = "cold"
+        elif local_cache_value == "warm":
+            local_cache = "warm"
+        implementation = neurodatabench.models.Implementation(
+            id=os.environ.get("NDB_IMPLEMENTATION_ID", "unknown"),
+            nwb_interface=None,
+            object_store_backend=os.environ.get("NDB_OBJECT_STORE_BACKEND"),
+            local_cache=local_cache,
+            remote_cache=None,
+        )
+        metadata = _run_metadata(
+            implementation=implementation,
+            benchmark_source=benchmark_source,
+            benchmark=benchmark,
+            implementation_script_path=None,
+        )
+        metadata["timed_out"] = True
+        if timeout_seconds is not None:
+            metadata["timeout_seconds"] = timeout_seconds
+        _write_json(out_dir / "benchmark.json", raw_benchmark)
+        _write_json(out_dir / "run_metadata.json", metadata)
+        _write_json(
+            out_dir / "timings.json",
+            {"total_duration_ns": round(elapsed_seconds * 1_000_000_000)},
+        )
+        _write_json(
+            out_dir / "validation.json",
+            {"correct": False, "timed_out": True},
+        )
     _update_results_leaderboard(out_dir)
 
 

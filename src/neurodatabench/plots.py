@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import statistics
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -85,7 +86,8 @@ def _leaderboard_plot_chart(
     network_profile_rows: list[dict[str, object]] | None = None,
 ) -> alt.VConcatChart:
     """Return stage timing, memory, and network comparisons for all runs."""
-    timing_rows = _leaderboard_timing_rows(rows)
+    elapsed_limit = _leaderboard_elapsed_limit(rows)
+    timing_rows = _leaderboard_timing_rows(rows, elapsed_limit=elapsed_limit)
     profile_series = list(
         dict.fromkeys(str(row["profile_series"]) for row in timing_rows)
     )
@@ -93,7 +95,11 @@ def _leaderboard_plot_chart(
         _LEADERBOARD_SERIES_COLORS[index % len(_LEADERBOARD_SERIES_COLORS)]
         for index in range(len(profile_series))
     ]
-    timing_chart = _leaderboard_timing_chart(rows=rows, timing_rows=timing_rows)
+    timing_chart = _leaderboard_timing_chart(
+        rows=rows,
+        timing_rows=timing_rows,
+        elapsed_limit=elapsed_limit,
+    )
     memory_chart = _leaderboard_comparison_profile_chart(
         title="Memory profile",
         rows=memory_profile_rows or [],
@@ -126,6 +132,8 @@ def _leaderboard_plot_chart(
 
 def _leaderboard_timing_rows(
     rows: list[neurodatabench.models.JsonObject],
+    *,
+    elapsed_limit: float | None = None,
 ) -> list[dict[str, object]]:
     """Flatten persisted setup and per-answer segments for timing lanes."""
     timing_rows: list[dict[str, object]] = []
@@ -156,6 +164,7 @@ def _leaderboard_timing_rows(
                 or duration_seconds is None
             ):
                 continue
+            is_last_segment = index == len(segments) - 1
             timing_rows.append(
                 {
                     "leaderboard_label": str(row["leaderboard_label"]),
@@ -167,8 +176,15 @@ def _leaderboard_timing_rows(
                     "start_seconds": start_seconds,
                     "stop_seconds": stop_seconds,
                     "duration_seconds": duration_seconds,
-                    "timeout_label": (
-                        _timeout_label(row) if index == len(segments) - 1 else ""
+                    "annotation_seconds": (
+                        min(stop_seconds, elapsed_limit)
+                        if elapsed_limit is not None
+                        else stop_seconds
+                    ),
+                    "elapsed_label": (
+                        _elapsed_label(row, elapsed_limit=elapsed_limit)
+                        if is_last_segment
+                        else ""
                     ),
                 }
             )
@@ -179,6 +195,7 @@ def _leaderboard_timing_chart(
     *,
     rows: list[neurodatabench.models.JsonObject],
     timing_rows: list[dict[str, object]],
+    elapsed_limit: float | None,
 ) -> alt.LayerChart:
     """Return aligned timing lanes broken into setup and individual answers."""
     y_sort = [str(row["leaderboard_label"]) for row in rows]
@@ -194,11 +211,12 @@ def _leaderboard_timing_chart(
         axis=alt.Axis(labelLimit=280),
     )
     source = alt.Data(values=timing_rows)
+    x_scale = alt.Scale(domain=[0.0, elapsed_limit]) if elapsed_limit else alt.Scale()
     bars = (
         alt.Chart(source)
-        .mark_bar(size=15, stroke="#ffffff", strokeWidth=0.7)
+        .mark_bar(size=15, stroke="#ffffff", strokeWidth=0.7, clip=True)
         .encode(
-            x=alt.X("start_seconds:Q", title="elapsed seconds"),
+            x=alt.X("start_seconds:Q", title="elapsed seconds", scale=x_scale),
             x2="stop_seconds:Q",
             y=y_encoding,
             color=alt.Color(
@@ -222,25 +240,32 @@ def _leaderboard_timing_chart(
                 alt.Tooltip("duration_seconds:Q", title="Duration", format=",.3f"),
             ],
         )
+        .add_params(
+            alt.selection_interval(
+                name="leaderboard_zoom",
+                bind="scales",
+                encodings=["x"],
+            )
+        )
     )
-    timeout_labels = (
+    elapsed_labels = (
         alt.Chart(source)
-        .transform_filter("datum.timeout_label !== ''")
+        .transform_filter("datum.elapsed_label !== ''")
         .mark_text(
-            align="left",
+            align="right",
             baseline="middle",
             color="#991b1b",
-            dx=6,
+            dx=-6,
             fontSize=11,
             fontWeight="bold",
         )
         .encode(
-            x=alt.X("stop_seconds:Q"),
+            x=alt.X("annotation_seconds:Q"),
             y=y_encoding,
-            text=alt.Text("timeout_label:N"),
+            text=alt.Text("elapsed_label:N"),
         )
     )
-    return alt.layer(bars, timeout_labels).properties(
+    return alt.layer(bars, elapsed_labels).properties(
         title="Stage durations",
         width=904,
         height=max(120, min(30 * len(rows), 720)),
@@ -259,7 +284,7 @@ def _leaderboard_comparison_profile_chart(
     """Return one resource axis containing every implementation trace."""
     return (
         alt.Chart(alt.Data(values=rows))
-        .mark_line()
+        .mark_line(clip=True)
         .encode(
             x=alt.X("elapsed_seconds:Q", title="elapsed seconds"),
             y=alt.Y(f"{y_field}:Q", title=y_title),
@@ -384,14 +409,48 @@ def _object_number_at(value: dict[str, object], key: str) -> float | None:
     return float(item)
 
 
-def _timeout_label(row: neurodatabench.models.JsonObject) -> str:
-    """Return the visible truncation label for one timing lane."""
+def _elapsed_label(
+    row: neurodatabench.models.JsonObject,
+    *,
+    elapsed_limit: float | None,
+) -> str:
+    """Return the timeout or visual-truncation annotation for one timing lane."""
+    total_seconds = _leaderboard_number_at(row, "total_seconds")
+    visually_truncated = (
+        elapsed_limit is not None
+        and total_seconds is not None
+        and total_seconds > elapsed_limit
+    )
     if not _leaderboard_timed_out(row):
-        return ""
+        return f"{total_seconds:g} s total" if visually_truncated else ""
     timeout_seconds = _leaderboard_number_at(row, "timeout_seconds")
     if timeout_seconds is None:
-        return "timed out"
-    return f"truncated at {timeout_seconds:g} s"
+        label = "timed out"
+    else:
+        label = f"timed out at {timeout_seconds:g} s"
+    if visually_truncated and total_seconds is not None:
+        label += f"; {total_seconds:g} s elapsed"
+    return label
+
+
+def _leaderboard_elapsed_limit(
+    rows: list[neurodatabench.models.JsonObject],
+) -> float | None:
+    """Return a robust initial x-axis limit when elapsed times contain outliers."""
+    elapsed = sorted(
+        value
+        for row in rows
+        for value in [_leaderboard_number_at(row, "total_seconds")]
+        if value is not None and value > 0
+    )
+    if len(elapsed) < 3:
+        return None
+    median = statistics.median(elapsed)
+    mad = statistics.median(abs(value - median) for value in elapsed)
+    threshold = median + 6.0 * mad if mad > 0 else median * 3.0
+    if threshold <= 0 or elapsed[-1] <= threshold:
+        return None
+    return threshold
 
 
 def _leaderboard_timed_out(row: neurodatabench.models.JsonObject) -> bool:

@@ -84,7 +84,46 @@ class PlotTests(unittest.TestCase):
                 }
             ]
         )
-        self.assertEqual(timing_values[0]["timeout_label"], "truncated at 60 s")
+        self.assertEqual(timing_values[0]["elapsed_label"], "timed out at 60 s")
+
+    def test_leaderboard_limits_outlier_but_preserves_full_elapsed_label(self) -> None:
+        """A long run should not squash typical runs on the initial x-axis view."""
+        rows = [
+            {
+                "implementation_id": implementation_id,
+                "benchmark_id": "benchmark",
+                "leaderboard_label": implementation_id,
+                "nwb_format": "hdf5",
+                "total_seconds": elapsed,
+            }
+            for implementation_id, elapsed in (
+                ("fast", 10.0),
+                ("typical", 12.0),
+                ("outlier", 300.0),
+            )
+        ]
+
+        limit = neurodatabench.plots._leaderboard_elapsed_limit(rows)
+        self.assertIsNotNone(limit)
+        assert limit is not None
+        self.assertLess(limit, 300.0)
+        timing_rows = neurodatabench.plots._leaderboard_timing_rows(
+            rows,
+            elapsed_limit=limit,
+        )
+        outlier = next(
+            row for row in timing_rows if row["implementation_id"] == "outlier"
+        )
+        self.assertEqual(outlier["stop_seconds"], 300.0)
+        self.assertEqual(outlier["annotation_seconds"], limit)
+        self.assertEqual(outlier["elapsed_label"], "300 s total")
+
+        spec = neurodatabench.plots._leaderboard_plot_chart(rows).to_dict()
+        self.assertEqual(
+            spec["vconcat"][0]["layer"][0]["encoding"]["x"]["scale"]["domain"],
+            [0.0, limit],
+        )
+        self.assertTrue(spec["params"])
 
     def test_leaderboard_profile_rows_overlay_run_samples(self) -> None:
         """Memory and network rows should retain implementation identity."""

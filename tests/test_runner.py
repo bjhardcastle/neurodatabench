@@ -768,6 +768,54 @@ class RunnerTests(unittest.TestCase):
             self.assertGreaterEqual(summary["num_samples"], 1)
             self.assertEqual(summary["profiler_scope"], "supervised_process_tree")
 
+    def test_supervised_timeout_creates_leaderboard_row_without_child_artifacts(
+        self,
+    ) -> None:
+        """A killed implementation should remain visible on the leaderboard."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            benchmark_path = root / "benchmark.json"
+            benchmark_path.write_text(
+                json.dumps(
+                    {
+                        "id": "timeout-benchmark",
+                        "nwb_format": "hdf5",
+                        "data_sources": [],
+                        "timeout_seconds": 0.05,
+                        "questions": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            profile_out = root / "results" / "timeout-run"
+            environment = {
+                "NDB_IMPLEMENTATION_ID": "timed-out-reader",
+                "NDB_OBJECT_STORE_BACKEND": "remfile",
+            }
+            with (
+                unittest.mock.patch.dict(os.environ, environment),
+                self.assertLogs("neurodatabench.runner", level="ERROR"),
+            ):
+                return_code = neurodatabench.runner._run_supervised_command(
+                    [sys.executable, "-c", "import time; time.sleep(1)"],
+                    timeout_seconds=0.05,
+                    timeout_profile_out=profile_out,
+                    benchmark_source=str(benchmark_path),
+                )
+
+            self.assertEqual(
+                return_code,
+                neurodatabench.runner.SUPERVISOR_TIMEOUT_EXIT_CODE,
+            )
+            leaderboard = json.loads(
+                (root / "results" / "leaderboard.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(len(leaderboard), 1)
+            self.assertEqual(leaderboard[0]["implementation_id"], "timed-out-reader")
+            self.assertEqual(leaderboard[0]["run_status"], "timed out")
+            self.assertEqual(leaderboard[0]["timeout_seconds"], 0.05)
+            self.assertGreater(leaderboard[0]["total_seconds"], 0.0)
+
     def test_profiler_tolerates_denied_child_process_inspection(self) -> None:
         """Unavailable process-tree metrics should not fail the supervised command."""
 
