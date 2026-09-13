@@ -21,6 +21,7 @@ import pydantic
 import pydantic_settings
 
 import neurodatabench.matrix
+import neurodatabench.models
 
 
 def find_repo_root(script_path: Path) -> Path:
@@ -46,6 +47,7 @@ BENCHMARKS_BY_FORMAT = {
     "zarr": "dynamic_routing_nwb_zarr_v0",
 }
 REMOTE_FILE_BACKENDS = ("remfile", "s3fs", "obstore")
+CACHE_STATUSES: tuple[neurodatabench.models.LocalCacheState, ...] = ("cold",)
 
 
 class MatrixSettings(pydantic_settings.BaseSettings):
@@ -138,7 +140,7 @@ def default_matrix() -> list[neurodatabench.matrix.MatrixRun]:
                     dependencies=("lazynwb==0.2.91",),
                 )
             )
-        for local_cache in ("cold", "warm"):
+        for local_cache in CACHE_STATUSES:
             runs.append(
                 neurodatabench.matrix.MatrixRun(
                     label=f"lazynwb-1.0.0dev3-{nwb_format}-obstore-{local_cache}",
@@ -172,16 +174,6 @@ def default_matrix() -> list[neurodatabench.matrix.MatrixRun]:
                 object_store_backend=backend,
             )
         )
-
-    runs.append(
-        neurodatabench.matrix.MatrixRun(
-            label="parquet-components-hdf5-polars-s3-anon",
-            implementation="implementations/parquet_components_template.py",
-            benchmark=BENCHMARKS_BY_FORMAT["hdf5"],
-            implementation_id="parquet_components",
-            object_store_backend="polars_s3_anon",
-        )
-    )
 
     for zarr_major, zarr_requirement in (("2", "zarr<3"), ("3", "zarr>=3,<4")):
         for backend in ("s3fs", "obstore"):

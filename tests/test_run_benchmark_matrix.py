@@ -213,8 +213,8 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("No matrix runs selected.", output)
 
-    def test_parquet_components_row_is_selectable(self) -> None:
-        """The parquet component implementation should be available in the matrix."""
+    def test_default_matrix_omits_parquet_components_row(self) -> None:
+        """The default matrix should omit the parquet component implementation."""
         completed = subprocess.run(
             [
                 sys.executable,
@@ -231,9 +231,7 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
 
         output = completed.stdout + completed.stderr
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertIn("Starting 1 matrix run(s).", output)
-        self.assertIn("parquet-components-hdf5-polars-s3-anon", output)
-        self.assertIn("implementations/parquet_components_template.py", output)
+        self.assertIn("No matrix runs selected.", output)
 
     def test_implementation_scripts_have_closed_inline_metadata(self) -> None:
         """Every implementation script should contain validly delimited inline metadata."""
