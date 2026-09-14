@@ -303,7 +303,7 @@ class RunnerTests(unittest.TestCase):
             self.assertFalse((implementation_dir / "validation.json").exists())
 
     def test_results_leaderboard_updates_for_successful_runs(self) -> None:
-        """Runs under a results directory should refresh aggregate leaderboard files."""
+        """Runs should refresh only their benchmark-specific leaderboard files."""
         with tempfile.TemporaryDirectory() as tmpdir:
             benchmark_path = Path(tmpdir) / "custom.json"
             benchmark_path.write_text(
@@ -350,9 +350,28 @@ class RunnerTests(unittest.TestCase):
                 submit_answers=submit_answers,
                 argv=(),
             )
+            other_benchmark_path = Path(tmpdir) / "other.json"
+            other_benchmark_path.write_text(
+                json.dumps(
+                    _benchmark_json(
+                        "other",
+                        [{"id": "q", "text": "Q", "answer": 1}],
+                    )
+                ),
+                encoding="utf-8",
+            )
+            neurodatabench.runner.main(
+                implementation_id="other-reader",
+                benchmark=other_benchmark_path,
+                out=results_dir / "other-run",
+                setup=setup,
+                submit_answers=submit_answers,
+                argv=(),
+            )
 
+            leaderboard_dir = results_dir / "custom"
             leaderboard = json.loads(
-                (results_dir / "leaderboard.json").read_text(encoding="utf-8")
+                (leaderboard_dir / "leaderboard.json").read_text(encoding="utf-8")
             )
             self.assertIsInstance(leaderboard, list)
             self.assertEqual(
@@ -369,9 +388,10 @@ class RunnerTests(unittest.TestCase):
             self.assertTrue(all("rank" not in row for row in leaderboard))
             self.assertTrue(all("timed_out" not in row for row in leaderboard))
             self.assertTrue(all("timeout_seconds" not in row for row in leaderboard))
-            self.assertTrue((results_dir / "leaderboard.csv").exists())
-            self.assertTrue((results_dir / "leaderboard.html").exists())
-            leaderboard_csv = (results_dir / "leaderboard.csv").read_text(
+            self.assertTrue((leaderboard_dir / "leaderboard.csv").exists())
+            self.assertTrue((leaderboard_dir / "leaderboard.html").exists())
+            self.assertFalse((results_dir / "leaderboard.json").exists())
+            leaderboard_csv = (leaderboard_dir / "leaderboard.csv").read_text(
                 encoding="utf-8"
             )
             self.assertIn(
@@ -382,6 +402,15 @@ class RunnerTests(unittest.TestCase):
             self.assertNotIn("timed_out", leaderboard_csv.splitlines()[0])
             self.assertNotIn("timeout_seconds", leaderboard_csv.splitlines()[0])
             self.assertTrue(all("peak_rss_delta_mib" in row for row in leaderboard))
+            other_leaderboard = json.loads(
+                (results_dir / "other" / "leaderboard.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(
+                [row["implementation_id"] for row in other_leaderboard],
+                ["other-reader"],
+            )
 
     def test_timed_out_leaderboard_row_allows_missing_phase_timings(self) -> None:
         """Killed runs should not need invented setup or submission durations."""
@@ -808,7 +837,12 @@ class RunnerTests(unittest.TestCase):
                 neurodatabench.runner.SUPERVISOR_TIMEOUT_EXIT_CODE,
             )
             leaderboard = json.loads(
-                (root / "results" / "leaderboard.json").read_text(encoding="utf-8")
+                (
+                    root
+                    / "results"
+                    / "timeout-benchmark"
+                    / "leaderboard.json"
+                ).read_text(encoding="utf-8")
             )
             self.assertEqual(len(leaderboard), 1)
             self.assertEqual(leaderboard[0]["implementation_id"], "timed-out-reader")

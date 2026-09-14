@@ -33,7 +33,7 @@ class PlotTests(unittest.TestCase):
 
         self.assertNotIn("subtitle", spec["title"])
         self.assertEqual(len(spec["vconcat"]), 3)
-        timing_spec = spec["vconcat"][0]["spec"]
+        timing_spec = spec["vconcat"][0]
         self.assertEqual(
             timing_spec["layer"][0]["encoding"]["x"]["title"],
             "elapsed seconds",
@@ -54,31 +54,32 @@ class PlotTests(unittest.TestCase):
             "network_received_mib",
         )
 
-    def test_leaderboard_timing_facet_filters_each_layer_by_benchmark(self) -> None:
-        """Each benchmark timing row should contain only that benchmark's runs."""
+    def test_leaderboard_chart_is_scoped_to_one_benchmark(self) -> None:
+        """A leaderboard should be an unfaceted chart for exactly one benchmark."""
         chart = neurodatabench.plots._leaderboard_plot_chart(
             [
                 {
                     "implementation_id": implementation_id,
                     "nwb_format": "hdf5",
-                    "benchmark_id": benchmark_id,
-                    "leaderboard_label": f"{implementation_id}-{benchmark_id}",
+                    "benchmark_id": "benchmark-a",
+                    "leaderboard_label": implementation_id,
                     "total_seconds": 1.0,
                 }
-                for benchmark_id in ("benchmark-a", "benchmark-b")
                 for implementation_id in ("fast", "slow")
             ]
         )
 
-        timing_spec = chart.to_dict()["vconcat"][0]
+        spec = chart.to_dict()
+        timing_spec = spec["vconcat"][0]
 
         self.assertEqual(
-            timing_spec["facet"]["row"]["field"],
-            "benchmark_id",
+            spec["title"]["text"],
+            "NeuroDataBench Leaderboard: benchmark-a",
         )
+        self.assertNotIn("facet", timing_spec)
         self.assertIn("data", timing_spec)
-        self.assertNotIn("data", timing_spec["spec"]["layer"][0])
-        self.assertNotIn("data", timing_spec["spec"]["layer"][1])
+        self.assertNotIn("data", timing_spec["layer"][0])
+        self.assertNotIn("data", timing_spec["layer"][1])
 
     def test_leaderboard_plot_chart_labels_truncated_timing_lane(self) -> None:
         """Timed-out leaderboard lanes should display their truncation cutoff."""
@@ -147,7 +148,7 @@ class PlotTests(unittest.TestCase):
 
         spec = neurodatabench.plots._leaderboard_plot_chart(rows).to_dict()
         self.assertEqual(
-            spec["vconcat"][0]["spec"]["layer"][0]["encoding"]["x"]["scale"]["domain"],
+            spec["vconcat"][0]["layer"][0]["encoding"]["x"]["scale"]["domain"],
             [0.0, limit],
         )
         self.assertTrue(spec["params"])

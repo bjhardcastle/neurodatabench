@@ -980,7 +980,7 @@ def _copy_implementation_script(source_path: Path | None, out_dir: Path) -> None
 
 
 def _update_results_leaderboard(out_dir: Path) -> None:
-    """Refresh aggregate leaderboard artifacts for default-style results dirs."""
+    """Refresh benchmark-specific leaderboard artifacts under a results directory."""
     if out_dir.parent.name == "results":
         results_dir = out_dir.parent
     elif out_dir.parent.parent.name == "results":
@@ -989,15 +989,27 @@ def _update_results_leaderboard(out_dir: Path) -> None:
         logger.debug("Skipping leaderboard update outside a results directory.")
         return
 
-    rows = _leaderboard_rows(results_dir)
+    current_row = _leaderboard_row(out_dir)
+    if current_row is None:
+        logger.debug("Skipping leaderboard update because the current run is incomplete.")
+        return
+    benchmark_id = str(current_row["benchmark_id"])
+    leaderboard_dir = results_dir / benchmark_id
+    rows = [
+        row
+        for row in _leaderboard_rows(results_dir)
+        if str(row["benchmark_id"]) == benchmark_id
+    ]
     if not rows:
         logger.debug("Skipping leaderboard update because no complete runs were found.")
         return
 
-    _write_json(results_dir / "leaderboard.json", rows)
-    _write_leaderboard_csv(results_dir / "leaderboard.csv", rows)
+    leaderboard_dir.mkdir(parents=True, exist_ok=True)
+    _write_json(leaderboard_dir / "leaderboard.json", rows)
+    _write_leaderboard_csv(leaderboard_dir / "leaderboard.csv", rows)
     neurodatabench.plots._write_leaderboard_plot(
         results_dir=results_dir,
+        leaderboard_dir=leaderboard_dir,
         rows=rows,
     )
 

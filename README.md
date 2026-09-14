@@ -16,6 +16,8 @@ The `.py` file contains code to fetch data from the files specified in a benchma
 
 Upon completion, profiling results are written to `results/<benchmark_id>/<implementation_id>`
 in the current directory. Pass `--out <path>` to use a different output directory.
+Each benchmark directory contains its own `leaderboard.json`, `leaderboard.csv`, and
+interactive `leaderboard.html` comparing only runs for that benchmark.
 Each run also writes `<out>/run.log` by default. The file contains package and
 implementation log records at DEBUG level; use `--log-file <path>` to override its
 location and `--log-level INFO` (the default) to control console output. Matrix runs

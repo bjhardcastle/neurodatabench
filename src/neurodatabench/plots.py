@@ -60,10 +60,11 @@ def _write_result_dashboard(
 def _write_leaderboard_plot(
     *,
     results_dir: Path,
+    leaderboard_dir: Path,
     rows: list[neurodatabench.models.JsonObject],
 ) -> None:
-    """Write an aggregate leaderboard plot for a results directory."""
-    logger.debug("Writing leaderboard plot to %s.", results_dir)
+    """Write one benchmark's leaderboard plot using runs from a results tree."""
+    logger.debug("Writing leaderboard plot to %s.", leaderboard_dir)
     if not rows:
         return
 
@@ -76,7 +77,7 @@ def _write_leaderboard_plot(
         memory_profile_rows=memory_rows,
         network_profile_rows=network_rows,
     )
-    _save_altair_chart(results_dir / "leaderboard.html", chart)
+    _save_altair_chart(leaderboard_dir / "leaderboard.html", chart)
 
 
 def _leaderboard_plot_chart(
@@ -85,7 +86,11 @@ def _leaderboard_plot_chart(
     memory_profile_rows: list[dict[str, object]] | None = None,
     network_profile_rows: list[dict[str, object]] | None = None,
 ) -> alt.VConcatChart:
-    """Return stage timing, memory, and network comparisons for all runs."""
+    """Return stage timing, memory, and network comparisons for one benchmark."""
+    benchmark_ids = {str(row.get("benchmark_id", "unknown")) for row in rows}
+    if len(benchmark_ids) != 1:
+        raise ValueError("A leaderboard chart must contain exactly one benchmark")
+    benchmark_id = next(iter(benchmark_ids))
     elapsed_limit = _leaderboard_elapsed_limit(rows)
     timing_rows = _leaderboard_timing_rows(rows, elapsed_limit=elapsed_limit)
     profile_series = list(
@@ -125,7 +130,10 @@ def _leaderboard_plot_chart(
         )
         .resolve_scale(x="shared", color="independent")
         .properties(
-            title=alt.TitleParams(text="NeuroDataBench Leaderboard", anchor="start")
+            title=alt.TitleParams(
+                text=f"NeuroDataBench Leaderboard: {benchmark_id}",
+                anchor="start",
+            )
         )
     )
 
@@ -196,7 +204,7 @@ def _leaderboard_timing_chart(
     rows: list[neurodatabench.models.JsonObject],
     timing_rows: list[dict[str, object]],
     elapsed_limit: float | None,
-) -> alt.FacetChart:
+) -> alt.LayerChart:
     """Return aligned timing lanes broken into setup and individual answers."""
     y_sort = [str(row["leaderboard_label"]) for row in rows]
     stage_order = list(dict.fromkeys(str(row["stage"]) for row in timing_rows))
@@ -265,14 +273,10 @@ def _leaderboard_timing_chart(
             text=alt.Text("elapsed_label:N"),
         )
     )
-    layered_chart = alt.layer(bars, elapsed_labels).properties(
+    return alt.layer(bars, elapsed_labels, data=source).properties(
         title="Stage durations",
         width=904,
         height=max(60, min(22 * len(rows), 720)),
-    )
-    return layered_chart.facet(
-        row=alt.Row("benchmark_id:N", title="Benchmark"),
-        data=source,
     )
 
 
