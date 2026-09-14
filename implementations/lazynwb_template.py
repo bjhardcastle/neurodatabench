@@ -94,19 +94,7 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
                     .item()
                 )
             case "predicated_spike_times":
-                visp_units = (
-                    state["units"]
-                    .filter(
-                        pl.col("structure").eq("VISp"),
-                        pl.col("firing_rate").is_not_null(),
-                    )
-                    .sort("firing_rate", descending=True)
-                    .head(1)
-                    .select("spike_times")
-                    .collect()
-                )
-                spike_times = visp_units["spike_times"][0]
-                answer = float(np.diff(spike_times).max())
+                answer = _longest_isi_for_fastest_visp_unit(state["units"])
             case "multisession_table_query":
                 answer = float(
                     state["trials"]
@@ -136,6 +124,57 @@ def teardown(context: neurodatabench.RunContext) -> None:
     """Release process-level resources."""
     logger.debug("Clearing lazynwb state for %d NWB paths.", len(context.benchmark.data_sources))
     state.clear()
+
+
+def _longest_isi_for_fastest_visp_unit(units: pl.LazyFrame) -> float:
+    """Return the longest ISI while reading spikes only for the selected unit."""
+    fastest_unit: dict[str, Any] | None = (
+        units.filter(
+            pl.col("structure").eq("VISp"),
+            pl.col("firing_rate").is_not_null(),
+        )
+        .select(
+            pl.struct(
+                lazynwb.NWB_PATH_COLUMN_NAME,
+                lazynwb.TABLE_INDEX_COLUMN_NAME,
+                "firing_rate",
+            )
+            .max_by("firing_rate")
+            .alias("fastest_unit")
+        )
+        .collect()
+        .get_column("fastest_unit")
+        .item()
+    )
+    if fastest_unit is None:
+        raise ValueError("No VISp unit with a firing_rate was found.")
+
+    nwb_path = str(fastest_unit[lazynwb.NWB_PATH_COLUMN_NAME])
+    table_index = int(fastest_unit[lazynwb.TABLE_INDEX_COLUMN_NAME])
+    firing_rate = float(fastest_unit["firing_rate"])
+    logger.debug(
+        "Fetching spike_times for fastest VISp unit in %s at row %d "
+        "(firing_rate=%s).",
+        nwb_path,
+        table_index,
+        firing_rate,
+    )
+
+    selected_unit = (
+        units.filter(
+            pl.col(lazynwb.NWB_PATH_COLUMN_NAME).eq(nwb_path),
+            pl.col(lazynwb.TABLE_INDEX_COLUMN_NAME).eq(table_index),
+        )
+        .select("spike_times")
+        .collect()
+    )
+    if selected_unit.height != 1:
+        raise ValueError(
+            "Expected one unit at "
+            f"{nwb_path!r} row {table_index}, found {selected_unit.height}."
+        )
+    spike_times = np.asarray(selected_unit["spike_times"].item(), dtype=np.float64)
+    return float(np.diff(spike_times).max())
 
 
 def _backend() -> str:
