@@ -268,7 +268,7 @@ def _leaderboard_timing_chart(
     layered_chart = alt.layer(bars, elapsed_labels).properties(
         title="Stage durations",
         width=904,
-        height=max(120, min(30 * len(rows), 720)),
+        height=max(60, min(22 * len(rows), 720)),
     )
     return layered_chart.facet(
         row=alt.Row("benchmark_id:N", title="Benchmark"),
