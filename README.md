@@ -2,6 +2,13 @@
 
 NeuroDataBench is a benchmarking framework for evaluating different data storage, access implementations, object-store backends, and caching strategies for streaming neuroscience data from the cloud. It allows tool maintainers and developers to fairly compare performance across various setups.
 
+## Terms
+
+- **Benchmark:** A defined set of data sources, questions, and answers. Specified in a JSON file.
+- **Question/Answer:** A single data science task within a benchmark, with a verifiable answer, designed to evaluate data access performance for a specific type of data (e.g. spike times for units matching some filtering criteria, or a large multi-dimensional array), from one or more data sources. 
+- **Implementation:** Code that fetches data and submits answers for a benchmark, like a timed examination. Standalone .py scripts with PEP 723 inline dependencies.
+- **Run:** One execution of an implementation against a benchmark, producing a folder of profiling results.
+
 ## Getting started
 
 ### Run an example implementation
