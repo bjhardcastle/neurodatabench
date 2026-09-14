@@ -128,30 +128,25 @@ def teardown(context: neurodatabench.RunContext) -> None:
 
 def _longest_isi_for_fastest_visp_unit(units: pl.LazyFrame) -> float:
     """Return the longest ISI while reading spikes only for the selected unit."""
-    fastest_unit: dict[str, Any] | None = (
+    candidates = (
         units.filter(
             pl.col("structure").eq("VISp"),
             pl.col("firing_rate").is_not_null(),
         )
         .select(
-            pl.struct(
-                lazynwb.NWB_PATH_COLUMN_NAME,
-                lazynwb.TABLE_INDEX_COLUMN_NAME,
-                "firing_rate",
-            )
-            .max_by("firing_rate")
-            .alias("fastest_unit")
+            lazynwb.NWB_PATH_COLUMN_NAME,
+            lazynwb.TABLE_INDEX_COLUMN_NAME,
+            "firing_rate",
         )
         .collect()
-        .get_column("fastest_unit")
-        .item()
     )
-    if fastest_unit is None:
+    if candidates.is_empty():
         raise ValueError("No VISp unit with a firing_rate was found.")
 
-    nwb_path = str(fastest_unit[lazynwb.NWB_PATH_COLUMN_NAME])
-    table_index = int(fastest_unit[lazynwb.TABLE_INDEX_COLUMN_NAME])
-    firing_rate = float(fastest_unit["firing_rate"])
+    fastest_unit = candidates.sort("firing_rate", descending=True).head(1)
+    nwb_path = str(fastest_unit[lazynwb.NWB_PATH_COLUMN_NAME].item())
+    table_index = int(fastest_unit[lazynwb.TABLE_INDEX_COLUMN_NAME].item())
+    firing_rate = float(fastest_unit["firing_rate"].item())
     logger.debug(
         "Fetching spike_times for fastest VISp unit in %s at row %d "
         "(firing_rate=%s).",
