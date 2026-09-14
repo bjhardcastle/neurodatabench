@@ -196,7 +196,7 @@ def _leaderboard_timing_chart(
     rows: list[neurodatabench.models.JsonObject],
     timing_rows: list[dict[str, object]],
     elapsed_limit: float | None,
-) -> alt.LayerChart:
+) -> alt.FacetChart:
     """Return aligned timing lanes broken into setup and individual answers."""
     y_sort = [str(row["leaderboard_label"]) for row in rows]
     stage_order = list(dict.fromkeys(str(row["stage"]) for row in timing_rows))

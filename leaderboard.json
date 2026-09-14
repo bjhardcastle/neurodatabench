@@ -1,0 +1,940 @@
+[
+  {
+    "benchmark_id": "dynamic_routing_nwb_hdf5_v0",
+    "correct": true,
+    "datetime_utc": "2026-09-13T03:12:48Z",
+    "implementation_id": "lazynwb-1.0.0dev3-obstore-cold",
+    "leaderboard_label": "lazynwb-1.0.0dev3-obstore-cold (dynamic_routing_nwb_hdf5_v0, 2026-09-13T03:12:48Z)",
+    "local_cache": "cold",
+    "network_received_mib": 71.1857967376709,
+    "nwb_format": "hdf5",
+    "nwb_interface": "lazynwb",
+    "object_store_backend": "obstore",
+    "peak_rss_delta_mib": 177.86328125,
+    "peak_rss_mib": 372.5625,
+    "remote_cache": "False",
+    "result_dir": "dynamic_routing_nwb_hdf5_v0/lazynwb-1_0_0dev3-obstore-cold",
+    "run_status": "correct",
+    "setup_seconds": 1.538867753,
+    "submit_answers_seconds": 4.434446421,
+    "timing_segments": [
+      {
+        "duration_seconds": 1.538867753,
+        "stage": "setup",
+        "start_seconds": 0.0,
+        "stop_seconds": 1.538867753
+      },
+      {
+        "duration_seconds": 2.194103717,
+        "stage": "multisession_units_metadata_query",
+        "start_seconds": 1.538867753,
+        "stop_seconds": 3.73297147
+      },
+      {
+        "duration_seconds": 0.963145623,
+        "stage": "predicated_spike_times",
+        "start_seconds": 3.73297147,
+        "stop_seconds": 4.696117093
+      },
+      {
+        "duration_seconds": 0.08761943200000033,
+        "stage": "multisession_table_query",
+        "start_seconds": 4.696117093,
+        "stop_seconds": 4.783736525
+      },
+      {
+        "duration_seconds": 1.1895776489999994,
+        "stage": "large_array",
+        "start_seconds": 4.783736525,
+        "stop_seconds": 5.9733141739999995
+      }
+    ],
+    "total_seconds": 5.973315709
+  },
+  {
+    "benchmark_id": "dynamic_routing_nwb_hdf5_v0",
+    "correct": true,
+    "datetime_utc": "2026-09-13T03:13:08Z",
+    "implementation_id": "lazynwb-dev-obstore-cold",
+    "leaderboard_label": "lazynwb-dev-obstore-cold (dynamic_routing_nwb_hdf5_v0, 2026-09-13T03:13:08Z)",
+    "local_cache": "cold",
+    "network_received_mib": 78.63916110992432,
+    "nwb_format": "hdf5",
+    "nwb_interface": "lazynwb",
+    "object_store_backend": "obstore",
+    "peak_rss_delta_mib": 224.26171875,
+    "peak_rss_mib": 418.96484375,
+    "remote_cache": "False",
+    "result_dir": "dynamic_routing_nwb_hdf5_v0/lazynwb-dev-obstore-cold",
+    "run_status": "correct",
+    "setup_seconds": 1.293654716,
+    "submit_answers_seconds": 7.733094261,
+    "timing_segments": [
+      {
+        "duration_seconds": 1.293654716,
+        "stage": "setup",
+        "start_seconds": 0.0,
+        "stop_seconds": 1.293654716
+      },
+      {
+        "duration_seconds": 3.4897661960000006,
+        "stage": "multisession_units_metadata_query",
+        "start_seconds": 1.293654716,
+        "stop_seconds": 4.783420912
+      },
+      {
+        "duration_seconds": 2.9208628909999996,
+        "stage": "predicated_spike_times",
+        "start_seconds": 4.783420912,
+        "stop_seconds": 7.704283803
+      },
+      {
+        "duration_seconds": 0.24777204799999986,
+        "stage": "multisession_table_query",
+        "start_seconds": 7.704283803,
+        "stop_seconds": 7.952055851
+      },
+      {
+        "duration_seconds": 1.0746931260000006,
+        "stage": "large_array",
+        "start_seconds": 7.952055851,
+        "stop_seconds": 9.026748977
+      }
+    ],
+    "total_seconds": 9.026750821
+  },
+  {
+    "benchmark_id": "dynamic_routing_nwb_hdf5_v0",
+    "correct": true,
+    "datetime_utc": "2026-09-13T03:15:42Z",
+    "implementation_id": "direct-h5py-remfile",
+    "leaderboard_label": "direct-h5py-remfile (dynamic_routing_nwb_hdf5_v0, 2026-09-13T03:15:42Z)",
+    "local_cache": "None",
+    "network_received_mib": 66.12956809997559,
+    "nwb_format": "hdf5",
+    "nwb_interface": null,
+    "object_store_backend": "remfile",
+    "peak_rss_delta_mib": 43.2578125,
+    "peak_rss_mib": 145.41015625,
+    "remote_cache": "False",
+    "result_dir": "dynamic_routing_nwb_hdf5_v0/direct-h5py-remfile",
+    "run_status": "correct",
+    "setup_seconds": 4.8258e-05,
+    "submit_answers_seconds": 10.465353448,
+    "timing_segments": [
+      {
+        "duration_seconds": 4.8258e-05,
+        "stage": "setup",
+        "start_seconds": 0.0,
+        "stop_seconds": 4.8258e-05
+      },
+      {
+        "duration_seconds": 3.184357252,
+        "stage": "multisession_units_metadata_query",
+        "start_seconds": 4.8258e-05,
+        "stop_seconds": 3.18440551
+      },
+      {
+        "duration_seconds": 2.9009857799999996,
+        "stage": "predicated_spike_times",
+        "start_seconds": 3.18440551,
+        "stop_seconds": 6.08539129
+      },
+      {
+        "duration_seconds": 2.663926914,
+        "stage": "multisession_table_query",
+        "start_seconds": 6.08539129,
+        "stop_seconds": 8.749318204
+      },
+      {
+        "duration_seconds": 1.716083502,
+        "stage": "large_array",
+        "start_seconds": 8.749318204,
+        "stop_seconds": 10.465401706
+      }
+    ],
+    "total_seconds": 10.46540316
+  },
+  {
+    "benchmark_id": "dynamic_routing_nwb_hdf5_v0",
+    "correct": true,
+    "datetime_utc": "2026-09-13T03:11:44Z",
+    "implementation_id": "lazynwb-v0.2.91-remfile",
+    "leaderboard_label": "lazynwb-v0.2.91-remfile (dynamic_routing_nwb_hdf5_v0, 2026-09-13T03:11:44Z)",
+    "local_cache": "cold",
+    "network_received_mib": 529.1104583740234,
+    "nwb_format": "hdf5",
+    "nwb_interface": "lazynwb",
+    "object_store_backend": "remfile",
+    "peak_rss_delta_mib": 1109.03125,
+    "peak_rss_mib": 1297.05078125,
+    "remote_cache": "False",
+    "result_dir": "dynamic_routing_nwb_hdf5_v0/lazynwb-v0_2_91-remfile",
+    "run_status": "correct",
+    "setup_seconds": 3.414421252,
+    "submit_answers_seconds": 19.218093533,
+    "timing_segments": [
+      {
+        "duration_seconds": 3.414421252,
+        "stage": "setup",
+        "start_seconds": 0.0,
+        "stop_seconds": 3.414421252
+      },
+      {
+        "duration_seconds": 3.1593628920000003,
+        "stage": "multisession_units_metadata_query",
+        "start_seconds": 3.414421252,
+        "stop_seconds": 6.573784144
+      },
+      {
+        "duration_seconds": 14.793790350999998,
+        "stage": "predicated_spike_times",
+        "start_seconds": 6.573784144,
+        "stop_seconds": 21.367574495
+      },
+      {
+        "duration_seconds": 0.20499304800000218,
+        "stage": "multisession_table_query",
+        "start_seconds": 21.367574495,
+        "stop_seconds": 21.572567543
+      },
+      {
+        "duration_seconds": 1.0599472419999998,
+        "stage": "large_array",
+        "start_seconds": 21.572567543,
+        "stop_seconds": 22.632514785
+      }
+    ],
+    "total_seconds": 22.632516522
+  },
+  {
+    "benchmark_id": "dynamic_routing_nwb_hdf5_v0",
+    "correct": true,
+    "datetime_utc": "2026-09-13T03:12:34Z",
+    "implementation_id": "lazynwb-v0.2.91-s3fs",
+    "leaderboard_label": "lazynwb-v0.2.91-s3fs (dynamic_routing_nwb_hdf5_v0, 2026-09-13T03:12:34Z)",
+    "local_cache": "cold",
+    "network_received_mib": 723.3408803939819,
+    "nwb_format": "hdf5",
+    "nwb_interface": "lazynwb",
+    "object_store_backend": "s3fs",
+    "peak_rss_delta_mib": 1321.7578125,
+    "peak_rss_mib": 1510.4765625,
+    "remote_cache": "False",
+    "result_dir": "dynamic_routing_nwb_hdf5_v0/lazynwb-v0_2_91-s3fs",
+    "run_status": "correct",
+    "setup_seconds": 22.435525564,
+    "submit_answers_seconds": 24.734185049,
+    "timing_segments": [
+      {
+        "duration_seconds": 22.435525564,
+        "stage": "setup",
+        "start_seconds": 0.0,
+        "stop_seconds": 22.435525564
+      },
+      {
+        "duration_seconds": 15.474202952999999,
+        "stage": "multisession_units_metadata_query",
+        "start_seconds": 22.435525564,
+        "stop_seconds": 37.909728517
+      },
+      {
+        "duration_seconds": 8.697730553,
+        "stage": "predicated_spike_times",
+        "start_seconds": 37.909728517,
+        "stop_seconds": 46.60745907
+      },
+      {
+        "duration_seconds": 0.4835847570000027,
+        "stage": "multisession_table_query",
+        "start_seconds": 46.60745907,
+        "stop_seconds": 47.091043827
+      },
+      {
+        "duration_seconds": 0.07866678599999943,
+        "stage": "large_array",
+        "start_seconds": 47.091043827,
+        "stop_seconds": 47.169710613
+      }
+    ],
+    "total_seconds": 47.169712363
+  },
+  {
+    "benchmark_id": "dynamic_routing_nwb_hdf5_v0",
+    "correct": false,
+    "datetime_utc": "2026-09-13T03:19:46Z",
+    "implementation_id": "direct-h5py-obstore",
+    "leaderboard_label": "direct-h5py-obstore (dynamic_routing_nwb_hdf5_v0, 2026-09-13T03:19:46Z)",
+    "local_cache": "None",
+    "network_received_mib": 3673.165009498596,
+    "nwb_format": "hdf5",
+    "nwb_interface": null,
+    "object_store_backend": "obstore",
+    "peak_rss_delta_mib": 229.39453125,
+    "peak_rss_mib": 232.1484375,
+    "remote_cache": "None",
+    "result_dir": "dynamic_routing_nwb_hdf5_v0/direct-h5py-obstore",
+    "run_status": "timed out",
+    "setup_seconds": null,
+    "submit_answers_seconds": null,
+    "timed_out": true,
+    "timeout_seconds": 120.0,
+    "timing_segments": [
+      {
+        "duration_seconds": 120.012743668,
+        "stage": "truncated (stage unknown)",
+        "start_seconds": 0.0,
+        "stop_seconds": 120.012743668
+      }
+    ],
+    "total_seconds": 120.012743668
+  },
+  {
+    "benchmark_id": "dynamic_routing_nwb_hdf5_v0",
+    "correct": false,
+    "datetime_utc": "2026-09-13T03:28:32Z",
+    "implementation_id": "pynwb-obstore",
+    "leaderboard_label": "pynwb-obstore (dynamic_routing_nwb_hdf5_v0, 2026-09-13T03:28:32Z)",
+    "local_cache": "None",
+    "network_received_mib": 2778.0412225723267,
+    "nwb_format": "hdf5",
+    "nwb_interface": null,
+    "object_store_backend": "obstore",
+    "peak_rss_delta_mib": 326.859375,
+    "peak_rss_mib": 328.78515625,
+    "remote_cache": "None",
+    "result_dir": "dynamic_routing_nwb_hdf5_v0/pynwb-obstore",
+    "run_status": "timed out",
+    "setup_seconds": null,
+    "submit_answers_seconds": null,
+    "timed_out": true,
+    "timeout_seconds": 120.0,
+    "timing_segments": [
+      {
+        "duration_seconds": 120.024004573,
+        "stage": "truncated (stage unknown)",
+        "start_seconds": 0.0,
+        "stop_seconds": 120.024004573
+      }
+    ],
+    "total_seconds": 120.024004573
+  },
+  {
+    "benchmark_id": "dynamic_routing_nwb_hdf5_v0",
+    "correct": false,
+    "datetime_utc": "2026-09-13T03:17:44Z",
+    "implementation_id": "direct-h5py-s3fs",
+    "leaderboard_label": "direct-h5py-s3fs (dynamic_routing_nwb_hdf5_v0, 2026-09-13T03:17:44Z)",
+    "local_cache": "None",
+    "network_received_mib": 9405.169632911682,
+    "nwb_format": "hdf5",
+    "nwb_interface": null,
+    "object_store_backend": "s3fs",
+    "peak_rss_delta_mib": 370.81640625,
+    "peak_rss_mib": 373.515625,
+    "remote_cache": "None",
+    "result_dir": "dynamic_routing_nwb_hdf5_v0/direct-h5py-s3fs",
+    "run_status": "timed out",
+    "setup_seconds": null,
+    "submit_answers_seconds": null,
+    "timed_out": true,
+    "timeout_seconds": 120.0,
+    "timing_segments": [
+      {
+        "duration_seconds": 120.024013489,
+        "stage": "truncated (stage unknown)",
+        "start_seconds": 0.0,
+        "stop_seconds": 120.024013489
+      }
+    ],
+    "total_seconds": 120.024013489
+  },
+  {
+    "benchmark_id": "dynamic_routing_nwb_hdf5_v0",
+    "correct": false,
+    "datetime_utc": "2026-09-13T03:11:18Z",
+    "implementation_id": "lazynwb-v0.2.91-obstore",
+    "leaderboard_label": "lazynwb-v0.2.91-obstore (dynamic_routing_nwb_hdf5_v0, 2026-09-13T03:11:18Z)",
+    "local_cache": "cold",
+    "network_received_mib": 3293.0737495422363,
+    "nwb_format": "hdf5",
+    "nwb_interface": null,
+    "object_store_backend": "obstore",
+    "peak_rss_delta_mib": 1326.56640625,
+    "peak_rss_mib": 1329.2578125,
+    "remote_cache": "None",
+    "result_dir": "dynamic_routing_nwb_hdf5_v0/lazynwb-v0_2_91-obstore",
+    "run_status": "timed out",
+    "setup_seconds": null,
+    "submit_answers_seconds": null,
+    "timed_out": true,
+    "timeout_seconds": 120.0,
+    "timing_segments": [
+      {
+        "duration_seconds": 120.024408499,
+        "stage": "truncated (stage unknown)",
+        "start_seconds": 0.0,
+        "stop_seconds": 120.024408499
+      }
+    ],
+    "total_seconds": 120.024408499
+  },
+  {
+    "benchmark_id": "dynamic_routing_nwb_hdf5_v0",
+    "correct": false,
+    "datetime_utc": "2026-09-13T03:26:29Z",
+    "implementation_id": "pynwb-s3fs",
+    "leaderboard_label": "pynwb-s3fs (dynamic_routing_nwb_hdf5_v0, 2026-09-13T03:26:29Z)",
+    "local_cache": "None",
+    "network_received_mib": 9678.1983127594,
+    "nwb_format": "hdf5",
+    "nwb_interface": null,
+    "object_store_backend": "s3fs",
+    "peak_rss_delta_mib": 436.8984375,
+    "peak_rss_mib": 438.82421875,
+    "remote_cache": "None",
+    "result_dir": "dynamic_routing_nwb_hdf5_v0/pynwb-s3fs",
+    "run_status": "timed out",
+    "setup_seconds": null,
+    "submit_answers_seconds": null,
+    "timed_out": true,
+    "timeout_seconds": 120.0,
+    "timing_segments": [
+      {
+        "duration_seconds": 120.036832742,
+        "stage": "truncated (stage unknown)",
+        "start_seconds": 0.0,
+        "stop_seconds": 120.036832742
+      }
+    ],
+    "total_seconds": 120.036832742
+  },
+  {
+    "benchmark_id": "dynamic_routing_nwb_hdf5_v0",
+    "correct": false,
+    "datetime_utc": "2026-09-13T03:24:27Z",
+    "implementation_id": "pynwb-remfile",
+    "leaderboard_label": "pynwb-remfile (dynamic_routing_nwb_hdf5_v0, 2026-09-13T03:24:27Z)",
+    "local_cache": "None",
+    "network_received_mib": 2965.693099975586,
+    "nwb_format": "hdf5",
+    "nwb_interface": null,
+    "object_store_backend": "remfile",
+    "peak_rss_delta_mib": 6373.82421875,
+    "peak_rss_mib": 6376.58203125,
+    "remote_cache": "None",
+    "result_dir": "dynamic_routing_nwb_hdf5_v0/pynwb-remfile",
+    "run_status": "timed out",
+    "setup_seconds": null,
+    "submit_answers_seconds": null,
+    "timed_out": true,
+    "timeout_seconds": 120.0,
+    "timing_segments": [
+      {
+        "duration_seconds": 120.189414526,
+        "stage": "truncated (stage unknown)",
+        "start_seconds": 0.0,
+        "stop_seconds": 120.189414526
+      }
+    ],
+    "total_seconds": 120.189414526
+  },
+  {
+    "benchmark_id": "dynamic_routing_nwb_zarr_v0",
+    "correct": true,
+    "datetime_utc": "2026-09-13T03:15:20Z",
+    "implementation_id": "lazynwb-1.0.0dev3-obstore-cold",
+    "leaderboard_label": "lazynwb-1.0.0dev3-obstore-cold (dynamic_routing_nwb_zarr_v0, 2026-09-13T03:15:20Z)",
+    "local_cache": "cold",
+    "network_received_mib": 27.365785598754883,
+    "nwb_format": "zarr",
+    "nwb_interface": "lazynwb",
+    "object_store_backend": "obstore",
+    "peak_rss_delta_mib": 182.73046875,
+    "peak_rss_mib": 373.22265625,
+    "remote_cache": "False",
+    "result_dir": "dynamic_routing_nwb_zarr_v0/lazynwb-1_0_0dev3-obstore-cold",
+    "run_status": "correct",
+    "setup_seconds": 1.454957099,
+    "submit_answers_seconds": 1.30773037,
+    "timing_segments": [
+      {
+        "duration_seconds": 1.454957099,
+        "stage": "setup",
+        "start_seconds": 0.0,
+        "stop_seconds": 1.454957099
+      },
+      {
+        "duration_seconds": 0.34557565999999995,
+        "stage": "multisession_units_metadata_query",
+        "start_seconds": 1.454957099,
+        "stop_seconds": 1.800532759
+      },
+      {
+        "duration_seconds": 0.7570245040000001,
+        "stage": "predicated_spike_times",
+        "start_seconds": 1.800532759,
+        "stop_seconds": 2.557557263
+      },
+      {
+        "duration_seconds": 0.1409280009999998,
+        "stage": "multisession_table_query",
+        "start_seconds": 2.557557263,
+        "stop_seconds": 2.698485264
+      },
+      {
+        "duration_seconds": 0.0642022050000004,
+        "stage": "large_array",
+        "start_seconds": 2.698485264,
+        "stop_seconds": 2.7626874690000003
+      }
+    ],
+    "total_seconds": 2.762688997
+  },
+  {
+    "benchmark_id": "dynamic_routing_nwb_zarr_v0",
+    "correct": true,
+    "datetime_utc": "2026-09-13T03:15:27Z",
+    "implementation_id": "lazynwb-dev-obstore-cold",
+    "leaderboard_label": "lazynwb-dev-obstore-cold (dynamic_routing_nwb_zarr_v0, 2026-09-13T03:15:27Z)",
+    "local_cache": "cold",
+    "network_received_mib": 33.90961265563965,
+    "nwb_format": "zarr",
+    "nwb_interface": "lazynwb",
+    "object_store_backend": "obstore",
+    "peak_rss_delta_mib": 194.015625,
+    "peak_rss_mib": 384.6328125,
+    "remote_cache": "False",
+    "result_dir": "dynamic_routing_nwb_zarr_v0/lazynwb-dev-obstore-cold",
+    "run_status": "correct",
+    "setup_seconds": 1.255857425,
+    "submit_answers_seconds": 1.938032169,
+    "timing_segments": [
+      {
+        "duration_seconds": 1.255857425,
+        "stage": "setup",
+        "start_seconds": 0.0,
+        "stop_seconds": 1.255857425
+      },
+      {
+        "duration_seconds": 0.38065560099999995,
+        "stage": "multisession_units_metadata_query",
+        "start_seconds": 1.255857425,
+        "stop_seconds": 1.636513026
+      },
+      {
+        "duration_seconds": 0.9470313750000001,
+        "stage": "predicated_spike_times",
+        "start_seconds": 1.636513026,
+        "stop_seconds": 2.583544401
+      },
+      {
+        "duration_seconds": 0.5101822769999997,
+        "stage": "multisession_table_query",
+        "start_seconds": 2.583544401,
+        "stop_seconds": 3.093726678
+      },
+      {
+        "duration_seconds": 0.10016291599999994,
+        "stage": "large_array",
+        "start_seconds": 3.093726678,
+        "stop_seconds": 3.193889594
+      }
+    ],
+    "total_seconds": 3.193891724
+  },
+  {
+    "benchmark_id": "dynamic_routing_nwb_zarr_v0",
+    "correct": true,
+    "datetime_utc": "2026-09-13T03:20:22Z",
+    "implementation_id": "direct-zarr-v3-obstore",
+    "leaderboard_label": "direct-zarr-v3-obstore (dynamic_routing_nwb_zarr_v0, 2026-09-13T03:20:22Z)",
+    "local_cache": "None",
+    "network_received_mib": 18.043996810913086,
+    "nwb_format": "zarr",
+    "nwb_interface": null,
+    "object_store_backend": "obstore",
+    "peak_rss_delta_mib": 34.81640625,
+    "peak_rss_mib": 118.578125,
+    "remote_cache": "False",
+    "result_dir": "dynamic_routing_nwb_zarr_v0/direct-zarr-v3-obstore",
+    "run_status": "correct",
+    "setup_seconds": 4.5653e-05,
+    "submit_answers_seconds": 3.635031891,
+    "timing_segments": [
+      {
+        "duration_seconds": 4.5653e-05,
+        "stage": "setup",
+        "start_seconds": 0.0,
+        "stop_seconds": 4.5653e-05
+      },
+      {
+        "duration_seconds": 1.036258801,
+        "stage": "multisession_units_metadata_query",
+        "start_seconds": 4.5653e-05,
+        "stop_seconds": 1.036304454
+      },
+      {
+        "duration_seconds": 1.2226099740000003,
+        "stage": "predicated_spike_times",
+        "start_seconds": 1.036304454,
+        "stop_seconds": 2.258914428
+      },
+      {
+        "duration_seconds": 1.1446093089999998,
+        "stage": "multisession_table_query",
+        "start_seconds": 2.258914428,
+        "stop_seconds": 3.403523737
+      },
+      {
+        "duration_seconds": 0.23155380700000006,
+        "stage": "large_array",
+        "start_seconds": 3.403523737,
+        "stop_seconds": 3.635077544
+      }
+    ],
+    "total_seconds": 3.635079058
+  },
+  {
+    "benchmark_id": "dynamic_routing_nwb_zarr_v0",
+    "correct": true,
+    "datetime_utc": "2026-09-13T03:20:15Z",
+    "implementation_id": "direct-zarr-v3-s3fs",
+    "leaderboard_label": "direct-zarr-v3-s3fs (dynamic_routing_nwb_zarr_v0, 2026-09-13T03:20:15Z)",
+    "local_cache": "None",
+    "network_received_mib": 17.73058032989502,
+    "nwb_format": "zarr",
+    "nwb_interface": null,
+    "object_store_backend": "s3fs",
+    "peak_rss_delta_mib": 56.03125,
+    "peak_rss_mib": 140.74609375,
+    "remote_cache": "False",
+    "result_dir": "dynamic_routing_nwb_zarr_v0/direct-zarr-v3-s3fs",
+    "run_status": "correct",
+    "setup_seconds": 4.5138e-05,
+    "submit_answers_seconds": 4.783359296,
+    "timing_segments": [
+      {
+        "duration_seconds": 4.5138e-05,
+        "stage": "setup",
+        "start_seconds": 0.0,
+        "stop_seconds": 4.5138e-05
+      },
+      {
+        "duration_seconds": 1.570081845,
+        "stage": "multisession_units_metadata_query",
+        "start_seconds": 4.5138e-05,
+        "stop_seconds": 1.570126983
+      },
+      {
+        "duration_seconds": 1.4582651660000001,
+        "stage": "predicated_spike_times",
+        "start_seconds": 1.570126983,
+        "stop_seconds": 3.028392149
+      },
+      {
+        "duration_seconds": 1.4754474989999995,
+        "stage": "multisession_table_query",
+        "start_seconds": 3.028392149,
+        "stop_seconds": 4.503839648
+      },
+      {
+        "duration_seconds": 0.2795647860000008,
+        "stage": "large_array",
+        "start_seconds": 4.503839648,
+        "stop_seconds": 4.783404434
+      }
+    ],
+    "total_seconds": 4.78340575
+  },
+  {
+    "benchmark_id": "dynamic_routing_nwb_zarr_v0",
+    "correct": true,
+    "datetime_utc": "2026-09-13T03:20:07Z",
+    "implementation_id": "direct-zarr-v2-obstore",
+    "leaderboard_label": "direct-zarr-v2-obstore (dynamic_routing_nwb_zarr_v0, 2026-09-13T03:20:07Z)",
+    "local_cache": "None",
+    "network_received_mib": 10.137589454650879,
+    "nwb_format": "zarr",
+    "nwb_interface": null,
+    "object_store_backend": "obstore",
+    "peak_rss_delta_mib": 29.66015625,
+    "peak_rss_mib": 109.65625,
+    "remote_cache": "False",
+    "result_dir": "dynamic_routing_nwb_zarr_v0/direct-zarr-v2-obstore",
+    "run_status": "correct",
+    "setup_seconds": 4.608e-05,
+    "submit_answers_seconds": 5.236609265,
+    "timing_segments": [
+      {
+        "duration_seconds": 4.608e-05,
+        "stage": "setup",
+        "start_seconds": 0.0,
+        "stop_seconds": 4.608e-05
+      },
+      {
+        "duration_seconds": 1.404388046,
+        "stage": "multisession_units_metadata_query",
+        "start_seconds": 4.608e-05,
+        "stop_seconds": 1.404434126
+      },
+      {
+        "duration_seconds": 1.6808267740000002,
+        "stage": "predicated_spike_times",
+        "start_seconds": 1.404434126,
+        "stop_seconds": 3.0852609
+      },
+      {
+        "duration_seconds": 1.587215632,
+        "stage": "multisession_table_query",
+        "start_seconds": 3.0852609,
+        "stop_seconds": 4.672476532
+      },
+      {
+        "duration_seconds": 0.5641788129999998,
+        "stage": "large_array",
+        "start_seconds": 4.672476532,
+        "stop_seconds": 5.236655345
+      }
+    ],
+    "total_seconds": 5.236656776
+  },
+  {
+    "benchmark_id": "dynamic_routing_nwb_zarr_v0",
+    "correct": true,
+    "datetime_utc": "2026-09-13T03:19:58Z",
+    "implementation_id": "direct-zarr-v2-s3fs",
+    "leaderboard_label": "direct-zarr-v2-s3fs (dynamic_routing_nwb_zarr_v0, 2026-09-13T03:19:58Z)",
+    "local_cache": "None",
+    "network_received_mib": 10.20000171661377,
+    "nwb_format": "zarr",
+    "nwb_interface": null,
+    "object_store_backend": "s3fs",
+    "peak_rss_delta_mib": 47.4609375,
+    "peak_rss_mib": 137.8359375,
+    "remote_cache": "False",
+    "result_dir": "dynamic_routing_nwb_zarr_v0/direct-zarr-v2-s3fs",
+    "run_status": "correct",
+    "setup_seconds": 4.4163e-05,
+    "submit_answers_seconds": 7.377657689,
+    "timing_segments": [
+      {
+        "duration_seconds": 4.4163e-05,
+        "stage": "setup",
+        "start_seconds": 0.0,
+        "stop_seconds": 4.4163e-05
+      },
+      {
+        "duration_seconds": 2.714813305,
+        "stage": "multisession_units_metadata_query",
+        "start_seconds": 4.4163e-05,
+        "stop_seconds": 2.714857468
+      },
+      {
+        "duration_seconds": 2.0820401769999997,
+        "stage": "predicated_spike_times",
+        "start_seconds": 2.714857468,
+        "stop_seconds": 4.796897645
+      },
+      {
+        "duration_seconds": 2.026282171,
+        "stage": "multisession_table_query",
+        "start_seconds": 4.796897645,
+        "stop_seconds": 6.823179816
+      },
+      {
+        "duration_seconds": 0.5545220360000007,
+        "stage": "large_array",
+        "start_seconds": 6.823179816,
+        "stop_seconds": 7.377701852
+      }
+    ],
+    "total_seconds": 7.377703811
+  },
+  {
+    "benchmark_id": "dynamic_routing_nwb_zarr_v0",
+    "correct": true,
+    "datetime_utc": "2026-09-13T03:15:13Z",
+    "implementation_id": "lazynwb-v0.2.91-s3fs",
+    "leaderboard_label": "lazynwb-v0.2.91-s3fs (dynamic_routing_nwb_zarr_v0, 2026-09-13T03:15:13Z)",
+    "local_cache": "cold",
+    "network_received_mib": 337.80214405059814,
+    "nwb_format": "zarr",
+    "nwb_interface": "lazynwb",
+    "object_store_backend": "s3fs",
+    "peak_rss_delta_mib": 758.85546875,
+    "peak_rss_mib": 947.93359375,
+    "remote_cache": "False",
+    "result_dir": "dynamic_routing_nwb_zarr_v0/lazynwb-v0_2_91-s3fs",
+    "run_status": "correct",
+    "setup_seconds": 10.870610217,
+    "submit_answers_seconds": 25.930509155,
+    "timing_segments": [
+      {
+        "duration_seconds": 10.870610217,
+        "stage": "setup",
+        "start_seconds": 0.0,
+        "stop_seconds": 10.870610217
+      },
+      {
+        "duration_seconds": 6.149428626999999,
+        "stage": "multisession_units_metadata_query",
+        "start_seconds": 10.870610217,
+        "stop_seconds": 17.020038844
+      },
+      {
+        "duration_seconds": 14.990333196999998,
+        "stage": "predicated_spike_times",
+        "start_seconds": 17.020038844,
+        "stop_seconds": 32.010372041
+      },
+      {
+        "duration_seconds": 4.614214055000005,
+        "stage": "multisession_table_query",
+        "start_seconds": 32.010372041,
+        "stop_seconds": 36.624586096
+      },
+      {
+        "duration_seconds": 0.17653327600000068,
+        "stage": "large_array",
+        "start_seconds": 36.624586096,
+        "stop_seconds": 36.801119372
+      }
+    ],
+    "total_seconds": 36.801122415
+  },
+  {
+    "benchmark_id": "dynamic_routing_nwb_zarr_v0",
+    "correct": true,
+    "datetime_utc": "2026-09-13T03:14:32Z",
+    "implementation_id": "lazynwb-v0.2.91-remfile",
+    "leaderboard_label": "lazynwb-v0.2.91-remfile (dynamic_routing_nwb_zarr_v0, 2026-09-13T03:14:32Z)",
+    "local_cache": "cold",
+    "network_received_mib": 337.6576318740845,
+    "nwb_format": "zarr",
+    "nwb_interface": "lazynwb",
+    "object_store_backend": "remfile",
+    "peak_rss_delta_mib": 887.015625,
+    "peak_rss_mib": 1076.0625,
+    "remote_cache": "False",
+    "result_dir": "dynamic_routing_nwb_zarr_v0/lazynwb-v0_2_91-remfile",
+    "run_status": "correct",
+    "setup_seconds": 11.206711987,
+    "submit_answers_seconds": 26.526855748,
+    "timing_segments": [
+      {
+        "duration_seconds": 11.206711987,
+        "stage": "setup",
+        "start_seconds": 0.0,
+        "stop_seconds": 11.206711987
+      },
+      {
+        "duration_seconds": 6.217877510999999,
+        "stage": "multisession_units_metadata_query",
+        "start_seconds": 11.206711987,
+        "stop_seconds": 17.424589498
+      },
+      {
+        "duration_seconds": 15.232744092999997,
+        "stage": "predicated_spike_times",
+        "start_seconds": 17.424589498,
+        "stop_seconds": 32.657333591
+      },
+      {
+        "duration_seconds": 4.892463219,
+        "stage": "multisession_table_query",
+        "start_seconds": 32.657333591,
+        "stop_seconds": 37.54979681
+      },
+      {
+        "duration_seconds": 0.18377092500000458,
+        "stage": "large_array",
+        "start_seconds": 37.54979681,
+        "stop_seconds": 37.733567735
+      }
+    ],
+    "total_seconds": 37.733569823
+  },
+  {
+    "benchmark_id": "dynamic_routing_nwb_zarr_v0",
+    "correct": true,
+    "datetime_utc": "2026-09-13T03:13:50Z",
+    "implementation_id": "lazynwb-v0.2.91-obstore",
+    "leaderboard_label": "lazynwb-v0.2.91-obstore (dynamic_routing_nwb_zarr_v0, 2026-09-13T03:13:50Z)",
+    "local_cache": "cold",
+    "network_received_mib": 337.7152280807495,
+    "nwb_format": "zarr",
+    "nwb_interface": "lazynwb",
+    "object_store_backend": "obstore",
+    "peak_rss_delta_mib": 792.984375,
+    "peak_rss_mib": 981.5,
+    "remote_cache": "False",
+    "result_dir": "dynamic_routing_nwb_zarr_v0/lazynwb-v0_2_91-obstore",
+    "run_status": "correct",
+    "setup_seconds": 11.904961837,
+    "submit_answers_seconds": 26.885269112,
+    "timing_segments": [
+      {
+        "duration_seconds": 11.904961837,
+        "stage": "setup",
+        "start_seconds": 0.0,
+        "stop_seconds": 11.904961837
+      },
+      {
+        "duration_seconds": 6.406766986999999,
+        "stage": "multisession_units_metadata_query",
+        "start_seconds": 11.904961837,
+        "stop_seconds": 18.311728824
+      },
+      {
+        "duration_seconds": 15.469914858000003,
+        "stage": "predicated_spike_times",
+        "start_seconds": 18.311728824,
+        "stop_seconds": 33.781643682
+      },
+      {
+        "duration_seconds": 4.839896967999998,
+        "stage": "multisession_table_query",
+        "start_seconds": 33.781643682,
+        "stop_seconds": 38.62154065
+      },
+      {
+        "duration_seconds": 0.16869029899999788,
+        "stage": "large_array",
+        "start_seconds": 38.62154065,
+        "stop_seconds": 38.790230949
+      }
+    ],
+    "total_seconds": 38.790234622
+  },
+  {
+    "benchmark_id": "dynamic_routing_nwb_zarr_v0",
+    "correct": false,
+    "datetime_utc": "2026-09-13T03:22:24Z",
+    "implementation_id": "pynwb-s3fs",
+    "leaderboard_label": "pynwb-s3fs (dynamic_routing_nwb_zarr_v0, 2026-09-13T03:22:24Z)",
+    "local_cache": "None",
+    "network_received_mib": 182.22211456298828,
+    "nwb_format": "zarr",
+    "nwb_interface": null,
+    "object_store_backend": "s3fs",
+    "peak_rss_delta_mib": 670.07421875,
+    "peak_rss_mib": 671.99609375,
+    "remote_cache": "None",
+    "result_dir": "dynamic_routing_nwb_zarr_v0/pynwb-s3fs",
+    "run_status": "timed out",
+    "setup_seconds": null,
+    "submit_answers_seconds": null,
+    "timed_out": true,
+    "timeout_seconds": 120.0,
+    "timing_segments": [
+      {
+        "duration_seconds": 120.03030743,
+        "stage": "truncated (stage unknown)",
+        "start_seconds": 0.0,
+        "stop_seconds": 120.03030743
+      }
+    ],
+    "total_seconds": 120.03030743
+  }
+]
