@@ -212,34 +212,6 @@ def _leaderboard_timing_chart(
     )
     source = alt.Data(values=timing_rows)
     x_scale = alt.Scale(domain=[0.0, elapsed_limit]) if elapsed_limit else alt.Scale()
-    group_breaks = []
-    previous_benchmark: str | None = None
-    for row in rows:
-        benchmark_id = str(row.get("benchmark_id", "unknown"))
-        if previous_benchmark is not None and benchmark_id != previous_benchmark:
-            group_breaks.append(
-                {
-                    "leaderboard_label": str(row["leaderboard_label"]),
-                    "benchmark_id": benchmark_id,
-                    "start_seconds": 0.0,
-                    "stop_seconds": elapsed_limit
-                    or max(
-                        (float(timing_row["stop_seconds"]) for timing_row in timing_rows),
-                        default=0.001,
-                    ),
-                }
-            )
-        previous_benchmark = benchmark_id
-    benchmark_dividers = (
-        alt.Chart(alt.Data(values=group_breaks))
-        .mark_rule(color="#9ca3af", strokeDash=[4, 3], strokeWidth=1)
-        .encode(
-            x=alt.X("start_seconds:Q", scale=x_scale),
-            x2="stop_seconds:Q",
-            y=y_encoding,
-            yOffset=alt.value(-15),
-        )
-    )
     bars = (
         alt.Chart(source)
         .mark_bar(size=15, stroke="#ffffff", strokeWidth=0.7, clip=True)
@@ -247,6 +219,7 @@ def _leaderboard_timing_chart(
             x=alt.X("start_seconds:Q", title="elapsed seconds", scale=x_scale),
             x2="stop_seconds:Q",
             y=y_encoding,
+            row="benchmark_id:N",
             color=alt.Color(
                 "stage:N",
                 title="stage",
@@ -293,7 +266,7 @@ def _leaderboard_timing_chart(
             text=alt.Text("elapsed_label:N"),
         )
     )
-    return alt.layer(benchmark_dividers, bars, elapsed_labels).properties(
+    return alt.layer(bars, elapsed_labels).properties(
         title="Stage durations",
         width=904,
         height=max(120, min(30 * len(rows), 720)),
