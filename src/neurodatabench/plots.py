@@ -213,7 +213,7 @@ def _leaderboard_timing_chart(
     source = alt.Data(values=timing_rows)
     x_scale = alt.Scale(domain=[0.0, elapsed_limit]) if elapsed_limit else alt.Scale()
     bars = (
-        alt.Chart(source)
+        alt.Chart()
         .mark_bar(size=15, stroke="#ffffff", strokeWidth=0.7, clip=True)
         .encode(
             x=alt.X("start_seconds:Q", title="elapsed seconds", scale=x_scale),
@@ -249,7 +249,7 @@ def _leaderboard_timing_chart(
         )
     )
     elapsed_labels = (
-        alt.Chart(source)
+        alt.Chart()
         .transform_filter("datum.elapsed_label !== ''")
         .mark_text(
             align="right",
