@@ -219,7 +219,6 @@ def _leaderboard_timing_chart(
             x=alt.X("start_seconds:Q", title="elapsed seconds", scale=x_scale),
             x2="stop_seconds:Q",
             y=y_encoding,
-            row="benchmark_id:N",
             color=alt.Color(
                 "stage:N",
                 title="stage",
@@ -266,10 +265,14 @@ def _leaderboard_timing_chart(
             text=alt.Text("elapsed_label:N"),
         )
     )
-    return alt.layer(bars, elapsed_labels).properties(
+    layered_chart = alt.layer(bars, elapsed_labels).properties(
         title="Stage durations",
         width=904,
         height=max(120, min(30 * len(rows), 720)),
+    )
+    return layered_chart.facet(
+        row=alt.Row("benchmark_id:N", title="Benchmark"),
+        data=source,
     )
 
 

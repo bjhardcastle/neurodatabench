@@ -33,13 +33,14 @@ class PlotTests(unittest.TestCase):
 
         self.assertNotIn("subtitle", spec["title"])
         self.assertEqual(len(spec["vconcat"]), 3)
+        timing_spec = spec["vconcat"][0]["spec"]
         self.assertEqual(
-            spec["vconcat"][0]["layer"][0]["encoding"]["x"]["title"],
+            timing_spec["layer"][0]["encoding"]["x"]["title"],
             "elapsed seconds",
         )
         tooltip_fields = [
             tooltip["field"]
-            for tooltip in spec["vconcat"][0]["layer"][0]["encoding"]["tooltip"]
+            for tooltip in timing_spec["layer"][0]["encoding"]["tooltip"]
         ]
         self.assertIn("stage", tooltip_fields)
         self.assertIn("duration_seconds", tooltip_fields)
@@ -120,7 +121,7 @@ class PlotTests(unittest.TestCase):
 
         spec = neurodatabench.plots._leaderboard_plot_chart(rows).to_dict()
         self.assertEqual(
-            spec["vconcat"][0]["layer"][0]["encoding"]["x"]["scale"]["domain"],
+            spec["vconcat"][0]["spec"]["layer"][0]["encoding"]["x"]["scale"]["domain"],
             [0.0, limit],
         )
         self.assertTrue(spec["params"])
