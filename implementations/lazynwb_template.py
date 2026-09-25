@@ -34,12 +34,20 @@ state: dict[str, Any] = {}
 
 _DEFAULT_BACKEND = "obstore"
 _DEFAULT_BENCHMARK = "dynamic_routing_nwb_hdf5_v0"
+_ROI_BENCHMARK = "multiplane_ophys_roi_zarr_v0"
+_ROI_PLANES = tuple(f"VISp_{index}" for index in range(8))
+_ROI_TABLE_SUFFIX = "image_segmentation/roi_table"
+_ROI_EXPECTED_TABLE_COUNT = 288
+_ROI_EXPECTED_ROI_COUNT = 67_400
 _FACEMAP_DOWNLOAD_ROWS = 12_850
 _FACEMAP_DOWNLOAD_COLUMNS = 128
 
 
 def clear_cache(context: neurodatabench.RunContext) -> None:
     """Remove the selected lazynwb catalog before a cold run."""
+    if _local_cache() != "cold":
+        logger.debug("Keeping lazynwb catalog for warm run.")
+        return
     logger.debug(
         "Clearing lazynwb caches for %d NWB paths before measured phases.",
         len(context.benchmark.data_sources),
@@ -58,6 +66,10 @@ def setup(context: neurodatabench.RunContext) -> None:
     lazynwb.config.anon = True
     _configure_backend(_backend())
     state.clear()
+
+    if context.benchmark.id == _ROI_BENCHMARK:
+        state["roi_tables"] = _scan_roi_tables(context)
+        return
 
     state["units"] = lazynwb.scan_nwb(
         context.benchmark.data_sources,
@@ -82,6 +94,8 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
     for question in context.benchmark.questions:
         logger.debug("Answering benchmark question %s.", question.id)
         match question.id:
+            case "roi_table_read_summary":
+                answer = _read_roi_tables(context)
             case "multisession_units_metadata_query":
                 answer = int(
                     state["units"]
@@ -172,6 +186,64 @@ def _longest_isi_for_fastest_visp_unit(units: pl.LazyFrame) -> float:
     return float(np.diff(spike_times).max())
 
 
+def _scan_roi_tables(
+    context: neurodatabench.RunContext,
+) -> list[tuple[str, str, pl.LazyFrame]]:
+    """Create one lazy frame per session and imaging plane."""
+    tables: list[tuple[str, str, pl.LazyFrame]] = []
+    for data_source in context.benchmark.data_sources:
+        for plane in _ROI_PLANES:
+            table_path = f"/processing/{plane}/{_ROI_TABLE_SUFFIX}"
+            logger.debug("Planning lazyNWB scan for %s at %s.", data_source, table_path)
+            tables.append(
+                (
+                    data_source,
+                    plane,
+                    lazynwb.scan_nwb(
+                        [data_source],
+                        table_path,
+                        disable_progress=True,
+                    ),
+                )
+            )
+    return tables
+
+
+def _read_roi_tables(context: neurodatabench.RunContext) -> neurodatabench.JsonObject:
+    """Collect every ROI-table column and summarize the resulting rows."""
+    tables: list[tuple[str, str, pl.LazyFrame]] = state["roi_tables"]
+    first_table_image_mask_mean: float | None = None
+    roi_count = 0
+    for index, (_, _, lazy_table) in enumerate(tables):
+        logger.debug("Collecting ROI table %d/%d.", index + 1, len(tables))
+        frame = lazy_table.collect()
+        roi_count += frame.height
+        if index == 0:
+            if frame.is_empty():
+                raise RuntimeError("The first ROI table did not produce any rows.")
+            image_masks = np.stack(frame["image_mask"].to_list())
+            first_table_image_mask_mean = float(
+                np.mean(image_masks, dtype=np.float64)
+            )
+
+    table_count = len(tables)
+    if table_count != _ROI_EXPECTED_TABLE_COUNT:
+        raise RuntimeError(
+            f"Expected {_ROI_EXPECTED_TABLE_COUNT} ROI tables, found {table_count}."
+        )
+    if roi_count != _ROI_EXPECTED_ROI_COUNT:
+        raise RuntimeError(f"Expected {_ROI_EXPECTED_ROI_COUNT} ROIs, found {roi_count}.")
+
+    if first_table_image_mask_mean is None:
+        raise RuntimeError("No ROI tables were collected.")
+    return {
+        "session_count": len(context.benchmark.data_sources),
+        "table_count": table_count,
+        "roi_count": roi_count,
+        "first_table_image_mask_mean": first_table_image_mask_mean,
+    }
+
+
 def _backend() -> str:
     """Return the requested lazynwb object-store backend label."""
     return os.environ.get("NDB_OBJECT_STORE_BACKEND", _DEFAULT_BACKEND)
@@ -187,8 +259,15 @@ def _configure_backend(backend: str) -> None:
         lazynwb.config.use_obstore = backend == "obstore"
         lazynwb.config.use_remfile = backend == "remfile"
         lazynwb.config.fsspec_storage_options = {"anon": True}
-    elif backend != "obstore":
-        raise ValueError(f"lazynwb {version} uses obstore; got backend {backend!r}.")
+    elif backend == "obstore":
+        lazynwb.config.use_obstore = True
+        lazynwb.config.use_remfile = False
+    elif backend == "s3fs":
+        lazynwb.config.use_obstore = False
+        lazynwb.config.use_remfile = False
+        lazynwb.config.fsspec_storage_options = {"anon": True}
+    else:
+        raise ValueError(f"Unsupported lazynwb {version} backend: {backend!r}.")
 
 
 def _lazynwb_version() -> str:

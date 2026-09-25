@@ -44,6 +44,7 @@ BENCHMARKS_BY_FORMAT = {
     "hdf5": "dynamic_routing_nwb_hdf5_v0",
     "zarr": "dynamic_routing_nwb_zarr_v0",
 }
+ROI_ZARR_BENCHMARK = "multiplane_ophys_roi_zarr_v0"
 H5PY_REMOTE_FILE_BACKENDS = ("remfile", "s3fs", "obstore")
 CACHE_STATUSES: tuple[neurodatabench.models.LocalCacheState, ...] = ("cold",)
 
@@ -125,7 +126,7 @@ def configure_logging(log_level: str) -> None:
 def default_matrix() -> list[neurodatabench.matrix.MatrixRun]:
     """Build the repository's default benchmark matrix."""
     runs: list[neurodatabench.matrix.MatrixRun] = []
-    for nwb_format, benchmark in BENCHMARKS_BY_FORMAT.items():
+    for benchmark in BENCHMARKS_BY_FORMAT.values():
         for backend in ("obstore", "remfile", "s3fs"):
             runs.append(
                 neurodatabench.matrix.MatrixRun(
@@ -200,7 +201,82 @@ def default_matrix() -> list[neurodatabench.matrix.MatrixRun]:
                 object_store_backend=backend,
             )
         )
+
+    runs.extend(_roi_zarr_matrix())
     return runs
+
+
+def _roi_zarr_matrix() -> list[neurodatabench.matrix.MatrixRun]:
+    """Build the S3 ROI-table matrix for direct and cached Zarr readers."""
+    runs = [
+        neurodatabench.matrix.MatrixRun(
+            implementation="implementations/roi_zarr_template.py",
+            benchmark=ROI_ZARR_BENCHMARK,
+            implementation_id="roi-zarr-s3fs",
+            object_store_backend="s3fs",
+            dependencies=("zarr==3.4.0", "s3fs==2026.9.0"),
+            environment={"NDB_ZARR_METHOD": "zarr-s3fs"},
+        ),
+        neurodatabench.matrix.MatrixRun(
+            implementation="implementations/roi_zarr_template.py",
+            benchmark=ROI_ZARR_BENCHMARK,
+            implementation_id="roi-zarr-obstore",
+            object_store_backend="obstore",
+            dependencies=("zarr==3.4.0", "obstore==0.11.1"),
+            environment={"NDB_ZARR_METHOD": "zarr-obstore"},
+        ),
+    ]
+    for method, dependencies in (
+        (
+            "virtualizarr",
+            ("zarr==3.4.0", "virtualizarr==2.7.3", "obstore==0.11.1"),
+        ),
+        (
+            "icechunk",
+            (
+                "zarr==3.4.0",
+                "virtualizarr==2.7.3",
+                "icechunk==2.2.2",
+                "obstore==0.11.1",
+            ),
+        ),
+    ):
+        for local_cache in ("cold", "warm"):
+            runs.append(
+                neurodatabench.matrix.MatrixRun(
+                    implementation=f"implementations/roi_{method}_template.py",
+                    benchmark=ROI_ZARR_BENCHMARK,
+                    implementation_id=f"roi-{method}-{local_cache}",
+                    object_store_backend="obstore",
+                    local_cache=local_cache,
+                    dependencies=dependencies,
+                    environment={"NDB_ZARR_METHOD": method},
+                )
+            )
+    runs.extend(_roi_lazynwb_matrix())
+    return runs
+
+
+def _roi_lazynwb_matrix() -> list[neurodatabench.matrix.MatrixRun]:
+    """Build stable and development lazyNWB rows for the ROI-table benchmark."""
+    versions = (
+        ("v0.2.91", ("lazynwb==0.2.91",), ("obstore", "remfile", "s3fs")),
+        ("1.0.0dev3", ("lazynwb==1.0.0dev3",), ("s3fs",)),
+        ("dev", ("git+https://github.com/bjhardcastle/lazynwb@dev6",), ("s3fs",)),
+    )
+    return [
+        neurodatabench.matrix.MatrixRun(
+            implementation="implementations/lazynwb_template.py",
+            benchmark=ROI_ZARR_BENCHMARK,
+            implementation_id=f"roi-lazynwb-{version}-{backend}-{local_cache}",
+            object_store_backend=backend,
+            local_cache=local_cache,
+            dependencies=dependencies,
+        )
+        for version, dependencies, backends in versions
+        for backend in backends
+        for local_cache in ("cold", "warm")
+    ]
 
 
 if __name__ == "__main__":

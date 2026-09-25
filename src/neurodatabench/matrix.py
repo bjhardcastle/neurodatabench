@@ -219,26 +219,51 @@ def _environment_for(run: MatrixRun, *, output_root: Path) -> dict[str, str]:
         "NDB_OBJECT_STORE_BACKEND",
         "NDB_LOCAL_CACHE",
         "NDB_LAZYNWB_CACHE_PATH",
+        "NDB_ZARR_CACHE_PATH",
+        "NDB_ZARR_METHOD",
         "LAZYNWB_USE_OBSTORE",
         "LAZYNWB_USE_REMFILE",
     ):
         environment.pop(name, None)
     environment.update(run.environment)
     environment["AWS_REGION"] = environment.get("AWS_REGION", "us-west-2")
-    environment["NDB_BENCHMARK"] = run.benchmark
+    environment["NDB_BENCHMARK"] = _benchmark_source_for_matrix(run.benchmark)
     environment["NDB_IMPLEMENTATION_ID"] = run.implementation_id
     if run.object_store_backend is not None:
         environment["NDB_OBJECT_STORE_BACKEND"] = run.object_store_backend
     if run.local_cache is not None:
         environment["NDB_LOCAL_CACHE"] = run.local_cache
     if Path(run.implementation).name == "lazynwb_template.py":
-        cache_id = _safe_folder_name(
-            run.implementation_id.removesuffix("_cold").removesuffix("_warm")
-        )
+        cache_id = _cache_id_for_run(run.implementation_id)
         environment["NDB_LAZYNWB_CACHE_PATH"] = str(
             output_root / "matrix_caches" / f"{cache_id}.sqlite"
         )
+    if Path(run.implementation).name in {
+        "roi_zarr_template.py",
+        "roi_virtualizarr_template.py",
+        "roi_icechunk_template.py",
+    }:
+        cache_id = _cache_id_for_run(run.implementation_id)
+        environment["NDB_ZARR_CACHE_PATH"] = str(
+            output_root / "matrix_caches" / cache_id
+        )
     return environment
+
+
+def _cache_id_for_run(implementation_id: str) -> str:
+    """Return one filesystem-safe cache ID for a cold/warm run pair."""
+    base_id = implementation_id
+    for suffix in ("_cold", "_warm", "-cold", "-warm"):
+        base_id = base_id.removesuffix(suffix)
+    return _safe_folder_name(base_id)
+
+
+def _benchmark_source_for_matrix(benchmark: str) -> str:
+    """Prefer a checked-out benchmark JSON when the matrix runs locally."""
+    local_path = Path("src/neurodatabench/benchmarks") / f"{benchmark}.json"
+    if local_path.is_file():
+        return local_path.as_posix()
+    return benchmark
 
 
 def _write_status(

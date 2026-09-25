@@ -78,3 +78,22 @@ raise SystemExit(run_matrix(runs, repo_root=Path.cwd()))
 Note that different versions of python dependencies can be specified in the matrix for comparison.
 The `implementation_id` is the run's name used for filtering, logs, and metadata. It may contain
 dots; punctuation is sanitized when it is used as a result-directory name.
+
+### Run the remote ROI-table Zarr matrix
+
+The capsule-derived `multiplane_ophys_roi_zarr_v0` benchmark streams 36 public
+`pophys.nwb.zarr` stores from `aind-open-data` and reads all 288 ROI tables. Its
+matrix compares direct Zarr access through s3fs and obstore with VirtualiZarr
+and Icechunk metadata caches:
+
+```console
+uv run scripts/run_benchmark_matrix.py --only roi-
+```
+
+The same benchmark also includes pre-1.0 lazyNWB 0.2.91 through obstore,
+remfile, and s3fs, plus lazyNWB 1.0.0dev3 and the `dev6` checkout through
+their working s3fs reader path.
+
+For VirtualiZarr, Icechunk, and lazyNWB, the `cold` row builds the local metadata
+cache in timed setup. The following `warm` row reuses the same cache under
+`results/matrix_caches/`; rerun the cold row when the cache needs rebuilding.

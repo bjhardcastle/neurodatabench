@@ -1,0 +1,55 @@
+{
+  "id": "multiplane_ophys_roi_zarr_v0",
+  "nwb_format": "zarr",
+  "timeout_seconds": 3600,
+  "data_sources": [
+    "s3://aind-open-data/multiplane-ophys_671941_2023-06-21_09-59-04_processed_2026-08-27_08-39-32/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_688429_2023-10-02_13-13-51_processed_2026-08-28_04-06-13/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_688429_2023-10-03_09-09-36_processed_2026-08-28_04-23-46/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_693653_2023-11-14_09-10-34_processed_2026-08-28_06-55-37/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_693653_2023-11-16_09-10-35_processed_2026-08-28_17-22-23/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_694202_2024-01-03_09-31-51_processed_2026-08-28_18-25-26/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_694202_2024-01-08_09-10-00_processed_2026-08-28_17-31-53/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_696026_2024-01-04_10-21-11_processed_2026-08-28_19-59-54/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_696026_2024-01-08_09-06-16_processed_2026-08-28_18-26-40/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_696026_2024-01-10_11-05-02_processed_2026-08-28_17-44-41/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_696026_2024-01-16_10-38-41_processed_2026-08-28_18-12-39/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_698543_2024-01-10_08-51-57_processed_2026-08-28_20-11-12/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_698543_2024-01-17_09-52-41_processed_2026-08-28_17-19-18/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_698543_2024-01-19_09-24-54_processed_2026-08-28_18-14-34/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_698543_2024-01-22_09-22-47_processed_2026-08-28_18-21-36/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_853372_2026-08-31_09-17-54_processed_2026-09-01_04-34-00/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_853372_2026-09-10_09-22-32_processed_2026-09-11_07-49-19/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_853372_2026-09-11_09-25-17_processed_2026-09-12_04-49-06/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_853372_2026-09-12_11-02-23_processed_2026-09-13_04-22-57/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_853372_2026-09-14_09-29-03_processed_2026-09-15_06-36-33/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_853372_2026-09-15_09-33-03_processed_2026-09-16_05-53-48/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_853372_2026-09-18_09-19-15_processed_2026-09-19_07-50-23/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_853372_2026-09-21_10-00-07_processed_2026-09-22_06-25-55/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_853372_2026-09-22_10-37-34_processed_2026-09-23_06-42-41/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_854865_2026-09-01_13-13-57_processed_2026-09-02_08-47-34/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_854865_2026-09-02_12-02-47_processed_2026-09-03_09-23-50/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_854865_2026-09-03_11-52-49_processed_2026-09-04_07-20-34/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_854865_2026-09-04_10-40-39_processed_2026-09-05_08-30-54/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_854865_2026-09-08_15-37-52_processed_2026-09-10_10-24-19/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_854865_2026-09-10_11-58-10_processed_2026-09-11_08-25-55/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_854865_2026-09-12_12-41-51_processed_2026-09-13_08-16-14/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_854865_2026-09-14_11-37-02_processed_2026-09-15_07-16-24/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_854865_2026-09-16_11-40-49_processed_2026-09-17_08-29-21/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_854865_2026-09-17_11-34-26_processed_2026-09-18_11-52-19/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_854865_2026-09-18_13-24-07_processed_2026-09-19_08-40-18/pophys.nwb.zarr",
+    "s3://aind-open-data/multiplane-ophys_854865_2026-09-22_12-48-12_processed_2026-09-23_09-19-55/pophys.nwb.zarr"
+  ],
+  "questions": [
+    {
+      "id": "roi_table_read_summary",
+      "text": "Read every column from all processing/<plane>/image_segmentation/roi_table groups across all sessions. Return an object with the number of sessions, number of ROI tables, total ROI rows from the id arrays, and the mean of image_mask in the first table after reading the full array.",
+      "answer": {
+        "session_count": 36,
+        "table_count": 288,
+        "roi_count": 67400,
+        "first_table_image_mask_mean": 0.0006160841
+      }
+    }
+  ]
+}

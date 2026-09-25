@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import runpy
 import subprocess
 import sys
 import tempfile
@@ -209,6 +210,96 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
         self.assertNotIn("pynwb-zarr-v2-obstore", output)
         self.assertIn("implementations/pynwb_zarr_template.py", output)
         self.assertIn("--with zarr<3", output)
+
+    def test_roi_zarr_matrix_has_direct_and_cached_rows(self) -> None:
+        """The remote ROI matrix should expose each reader and lazyNWB variants."""
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "scripts/run_benchmark_matrix.py",
+                "--dry-run",
+                "--only",
+                "roi-",
+            ],
+            check=False,
+            cwd=Path(__file__).resolve().parents[1],
+            capture_output=True,
+            text=True,
+        )
+
+        output = completed.stdout + completed.stderr
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("Starting 16 matrix run(s).", output)
+        self.assertIn("roi-zarr-s3fs", output)
+        self.assertIn("roi-zarr-obstore", output)
+        self.assertIn("roi-virtualizarr-cold", output)
+        self.assertIn("roi-virtualizarr-warm", output)
+        self.assertIn("roi-icechunk-cold", output)
+        self.assertIn("roi-icechunk-warm", output)
+        self.assertIn("implementations/roi_virtualizarr_template.py", output)
+        self.assertIn("implementations/roi_icechunk_template.py", output)
+        self.assertIn("roi-lazynwb-v0.2.91-s3fs-cold", output)
+        self.assertIn("roi-lazynwb-v0.2.91-obstore-cold", output)
+        self.assertIn("roi-lazynwb-v0.2.91-remfile-cold", output)
+        self.assertIn("roi-lazynwb-1.0.0dev3-s3fs-cold", output)
+        self.assertIn("roi-lazynwb-dev-s3fs-cold", output)
+        self.assertIn("--benchmark multiplane_ophys_roi_zarr_v0", output)
+
+    def test_roi_zarr_matrix_reuses_cache_between_cold_and_warm_rows(self) -> None:
+        """Cold and warm cache rows should resolve to one shared matrix cache."""
+        import neurodatabench.matrix
+
+        runs = [
+            run
+            for run in runpy.run_path(
+                "scripts/run_benchmark_matrix.py",
+                run_name="matrix_test_module",
+            )["default_matrix"]()
+            if run.implementation_id
+            in {"roi-virtualizarr-cold", "roi-virtualizarr-warm"}
+        ]
+        self.assertEqual(len(runs), 2)
+        cold_environment = neurodatabench.matrix._environment_for(
+            runs[0], output_root=Path("results")
+        )
+        warm_environment = neurodatabench.matrix._environment_for(
+            runs[1], output_root=Path("results")
+        )
+        self.assertEqual(
+            cold_environment["NDB_ZARR_CACHE_PATH"],
+            warm_environment["NDB_ZARR_CACHE_PATH"],
+        )
+
+    def test_roi_lazynwb_matrix_reuses_cache_between_cold_and_warm_rows(self) -> None:
+        """Stable and development lazyNWB rows should each share their cache pair."""
+        import neurodatabench.matrix
+
+        runs = [
+            run
+            for run in runpy.run_path(
+                "scripts/run_benchmark_matrix.py",
+                run_name="matrix_test_module",
+            )["default_matrix"]()
+            if run.implementation_id.startswith("roi-lazynwb-")
+        ]
+        self.assertEqual(len(runs), 10)
+        for prefix in (
+            "roi-lazynwb-v0.2.91-obstore",
+            "roi-lazynwb-v0.2.91-remfile",
+            "roi-lazynwb-v0.2.91-s3fs",
+            "roi-lazynwb-1.0.0dev3-s3fs",
+            "roi-lazynwb-dev-s3fs",
+        ):
+            pair = [run for run in runs if run.implementation_id.startswith(prefix)]
+            self.assertEqual(len(pair), 2)
+            paths = {
+                neurodatabench.matrix._environment_for(
+                    run,
+                    output_root=Path("results"),
+                )["NDB_LAZYNWB_CACHE_PATH"]
+                for run in pair
+            }
+            self.assertEqual(len(paths), 1)
 
     def test_default_matrix_omits_unsupported_ros3_rows(self) -> None:
         """The self-contained matrix should not require a nonstandard h5py build."""
