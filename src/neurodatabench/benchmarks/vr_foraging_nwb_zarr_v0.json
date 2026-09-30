@@ -1,0 +1,35 @@
+{
+  "id": "vr_foraging_nwb_zarr_v0",
+  "nwb_format": "zarr",
+  "timeout_seconds": 120,
+  "data_sources": [
+    "s3://aind-open-data/707349_2024-06-17_10-38-59_processed_2026-09-22_23-05-20/behavior.nwb.zarr",
+    "s3://aind-open-data/707349_2024-06-24_10-05-33_processed_2026-09-22_23-05-37/behavior.nwb.zarr",
+    "s3://aind-open-data/707349_2024-06-25_09-54-55_processed_2026-09-22_23-06-05/behavior.nwb.zarr",
+    "s3://aind-open-data/707349_2024-06-26_10-29-55_processed_2026-09-22_23-06-04/behavior.nwb.zarr",
+    "s3://aind-open-data/707349_2024-06-27_09-48-13_processed_2026-09-22_23-06-09/behavior.nwb.zarr",
+    "s3://aind-open-data/707349_2024-06-28_09-55-06_processed_2026-09-22_23-06-04/behavior.nwb.zarr"
+  ],
+  "questions": [
+    {
+      "id": "multisession_reward_rate",
+      "text": "Across all sessions, what fraction of 'RewardSite' trials did a mouse stop (has_choice = True) and receive a reward (has_reward = True)?",
+      "answer": 0.4790502793296089
+    },
+    {
+      "id": "multisession_patch_stop",
+      "text": "Across all sessions, what is the mean number of stopped-at `RewardSite` trials per patch?",
+      "answer": 11.548387096774194
+    },
+    {
+      "id": "reward_lick_latency",
+      "text": "In the first session, what is the median latency in seconds from each `reward_onset_time` to the first lick onset (`True` sample) in `processing/behavior/licks` after it?",
+      "answer": 0.06512000039219856
+    },
+    {
+      "id": "multisession_stopped_fraction",
+      "text": "What fraction of velocity samples are below each session's stop threshold in `acquisition/VrForagingDataset.Behavior.SoftwareEvents.StopVelocityThreshold`?",
+      "answer": 0.4711665774464741
+    }
+  ]
+}
