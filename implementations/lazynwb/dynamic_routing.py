@@ -1,3 +1,18 @@
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#   "altair",
+#   "lazynwb",
+#   "numpy",
+#   "polars",
+#   "psutil",
+#   "neurodatabench",
+# ]
+# [tool.uv.sources]
+# neurodatabench = { git = "https://github.com/bjhardcastle/neurodatabench" }
+# ///
+
+
 """lazynwb answers for the dynamic routing benchmark questions."""
 
 import logging

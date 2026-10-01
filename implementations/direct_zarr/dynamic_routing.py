@@ -1,3 +1,15 @@
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#   "numpy",
+#   "neurodatabench",
+#   "zarr",
+# ]
+# [tool.uv.sources]
+# neurodatabench = { git = "https://github.com/bjhardcastle/neurodatabench" }
+# ///
+
+
 import numpy as np
 import neurodatabench
 import logging

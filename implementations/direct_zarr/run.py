@@ -16,6 +16,7 @@
 # neurodatabench = { git = "https://github.com/bjhardcastle/neurodatabench" }
 # ///
 
+
 """Runnable direct Zarr implementation for the packaged NWB benchmark."""
 
 from __future__ import annotations

@@ -1,3 +1,17 @@
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#   "numpy",
+#   "obstore",
+#   "s3fs",
+#   "zarr",
+#   "neurodatabench",
+# ]
+# [tool.uv.sources]
+# neurodatabench = { git = "https://github.com/bjhardcastle/neurodatabench" }
+# ///
+
+
 import zarr
 import os
 import neurodatabench
