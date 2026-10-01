@@ -22,7 +22,7 @@
     },
     {
       "id": "multisession_lick_rate_average",
-      "text": "Using the `events/events` table, find the average lick rate for each session. Which was the highest average lick-rate among all sessions?",
+      "text": "Using the `events/events` table, find the average lick rate for each session. What was the highest average lick-rate among all sessions?",
       "answer": 0.48366063694213346
     },
     {

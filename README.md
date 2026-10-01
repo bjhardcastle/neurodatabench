@@ -16,7 +16,7 @@ NeuroDataBench is a benchmarking framework for evaluating different data storage
 From the repository root, run a packaged benchmark with `uv`:
 
 ```console
-uv run implementations/pynwb_zarr_template.py
+uv run implementations/pynwb_zarr/run.py
 ```
 
 The `.py` file contains code to fetch data from the files specified in a benchmark (in this case `src/neurodatabench/benchmarks/dynamic_routing_nwb_zarr_v0.json`) and submit answers to the benchmark runner.
