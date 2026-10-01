@@ -1,3 +1,19 @@
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#   "hdmf-zarr",
+#   "numpy",
+#   "pandas",
+#   "pynwb",
+#   "s3fs",
+#   "zarr<3",
+#   "neurodatabench",
+# ]
+# [tool.uv.sources]
+# neurodatabench = { git = "https://github.com/bjhardcastle/neurodatabench" }
+# ///
+
+
 """PyNWB NWBZarrIO answers for the change detection benchmark questions."""
 
 import logging

@@ -1,10 +1,21 @@
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#   "numpy",
+#   "neurodatabench",
+#   "zarr",
+# ]
+# [tool.uv.sources]
+# neurodatabench = { git = "https://github.com/bjhardcastle/neurodatabench" }
+# ///
+
+
 """Direct Zarr answers for the VR foraging benchmark questions."""
 
 import numpy as np
 import neurodatabench
 import logging
 import helpers
-from typing import Any
 
 
 logger = logging.getLogger(__name__)
