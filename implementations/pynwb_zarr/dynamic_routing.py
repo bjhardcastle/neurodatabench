@@ -1,9 +1,13 @@
 # /// script
 # requires-python = ">=3.10"
 # dependencies = [
+#   "altair",
 #   "hdmf-zarr",
 #   "numpy",
 #   "pandas",
+#   "psutil",
+#   "pydantic>=2.13.4",
+#   "pydantic-settings>=2.14.1",
 #   "pynwb",
 #   "s3fs",
 #   "zarr<3",
@@ -16,26 +20,34 @@
 
 """PyNWB NWBZarrIO answers for the dynamic routing benchmark questions."""
 
-import logging
+from __future__ import annotations
+
+import os
 from typing import Any
 
 import numpy as np
 import pandas as pd
+from hdmf_zarr import NWBZarrIO
 
 import neurodatabench
-import helpers
+
+logger = neurodatabench.get_logger(__name__)
 
 
+_DEFAULT_BENCHMARK = "dynamic_routing_nwb_zarr_v0"
+_DEFAULT_IMPLEMENTATION_ID = "pynwb_hdmf_zarr"
+_DEFAULT_BACKEND = "s3fs"
 _FACEMAP_DOWNLOAD_ROWS = 12_850
 _FACEMAP_DOWNLOAD_COLUMNS = 128
 
 
-logger = logging.getLogger(__name__)
+state: dict[str, Any] = {}
 
 
+#region Dynamic Routing solutions
 def submit_answers(context: neurodatabench.RunContext) -> None:
     """Submit answers for every benchmark question."""
-    files = helpers.files()
+    files = _files()
     for question in context.benchmark.questions:
         logger.debug("Answering benchmark question %s.", question.id)
         match question.id:
@@ -74,8 +86,21 @@ def _count_visp_default_qc(file_records: list[dict[str, Any]]) -> int:
     """Count VISp units passing default QC across opened PyNWB NWBFiles."""
     count = 0
     for file_record in file_records:
-        units = _unit_metrics(file_record)
-        structure = helpers.string_array(units["structure"])
+        if "unit_metrics" not in file_record:
+            nwb_file = file_record["nwb_file"]
+            if nwb_file.units is None:
+                raise ValueError(f"NWBFile {nwb_file.identifier} does not contain units.")
+            file_record["units"] = nwb_file.units
+            file_record["unit_metrics"] = nwb_file.units.to_dataframe(
+                exclude={
+                    "spike_times",
+                    "spike_amplitudes",
+                    "waveform_mean",
+                    "waveform_std",
+                },
+            )
+        units = file_record["unit_metrics"]
+        structure = _string_array(units["structure"])
         default_qc = np.asarray(units["default_qc"], dtype=np.bool_)
         count += int(np.count_nonzero((structure == "VISp") & default_qc))
     return count
@@ -87,12 +112,25 @@ def _longest_isi_for_fastest_visp_unit(file_records: list[dict[str, Any]]) -> fl
     top_row = -1
     top_firing_rate = -np.inf
     for file_record in file_records:
-        units = _unit_metrics(file_record)
-        structure = helpers.string_array(units["structure"])
+        nwb_file = file_record["nwb_file"]
+        if "unit_metrics" not in file_record:
+            if nwb_file.units is None:
+                raise ValueError(f"NWBFile {nwb_file.identifier} does not contain units.")
+            file_record["units"] = nwb_file.units
+            file_record["unit_metrics"] = nwb_file.units.to_dataframe(
+                exclude={
+                    "spike_times",
+                    "spike_amplitudes",
+                    "waveform_mean",
+                    "waveform_std",
+                },
+            )
+        units = file_record["unit_metrics"]
+        structure = _string_array(units["structure"])
         firing_rate = np.asarray(units["firing_rate"], dtype=np.float64)
         candidate_rows = np.flatnonzero((structure == "VISp") & ~np.isnan(firing_rate))
         if candidate_rows.size == 0:
-            logger.debug("No VISp units with firing_rate in %s.", file_record["nwb_file"].identifier)
+            logger.debug("No VISp units with firing_rate in %s.", nwb_file.identifier)
             continue
         local_row = int(candidate_rows[np.argmax(firing_rate[candidate_rows])])
         local_rate = float(firing_rate[local_row])
@@ -109,12 +147,13 @@ def _longest_isi_for_fastest_visp_unit(file_records: list[dict[str, Any]]) -> fl
     return float(np.diff(spike_times).max())
 
 
+
 def _multisession_table_query(file_records: list[dict[str, Any]]) -> float:
     """Compute the mean trial duration across opened PyNWB NWBFiles."""
     total_duration = 0.0
     total_trials = 0
     for file_record in file_records:
-        trials = helpers.trials_frame(file_record)
+        trials = _get_trials_table(file_record)
         start_time = np.asarray(trials["start_time"], dtype=np.float64)
         stop_time = np.asarray(trials["stop_time"], dtype=np.float64)
         total_duration += float(np.sum(stop_time - start_time))
@@ -135,3 +174,109 @@ def _large_array(file_records: list[dict[str, Any]]) -> float:
         dtype=np.float32,
     )
     return float(np.mean(data, dtype=np.float64))
+
+
+def _get_trials_table(file_record: dict[str, Any]) -> pd.DataFrame:
+    """Return the cached trials DataFrame for one opened NWBFile."""
+    if "trials_frame" not in file_record:
+        nwb_file = file_record["nwb_file"]
+        if nwb_file.trials is None:
+            raise ValueError(f"NWBFile {nwb_file.identifier} does not contain trials.")
+        file_record["trials_frame"] = nwb_file.trials.to_dataframe()
+    return file_record["trials_frame"]
+
+
+def _string_array(values: Any) -> np.ndarray:
+    """Convert a table column to a NumPy string array."""
+    raw_values = np.asarray(values)
+    return np.asarray(
+        [
+            value.decode("utf-8") if isinstance(value, bytes) else str(value)
+            for value in raw_values
+        ],
+        dtype=str,
+    )
+#endregion
+
+
+#region Runtime Configuration
+def _backend() -> str:
+    """Return the requested NWBZarrIO object-store backend."""
+    return os.environ.get("NDB_OBJECT_STORE_BACKEND", _DEFAULT_BACKEND)
+
+
+def _open_files(data_sources: list[str]) -> None:
+    """Materialize each remote Zarr store as a PyNWB NWBFile in `state`."""
+    state.clear()
+    state["files"] = []
+    try:
+        for nwb_path in data_sources:
+            logger.debug("Opening %s through NWBZarrIO.", nwb_path)
+            nwb_io = NWBZarrIO(
+                path=nwb_path,
+                mode="r",
+                load_namespaces=True,
+                storage_options={"anon": True},
+            )
+            file_record: dict[str, Any] = {"nwb_io": nwb_io}
+            state["files"].append(file_record)
+            file_record["nwb_file"] = nwb_io.read()
+    except Exception:
+        logger.debug("Closing partially opened NWBZarrIO handles after setup failure.")
+        _close_files()
+        raise
+
+
+def _close_files() -> None:
+    """Close every NWBZarrIO handle and clear implementation state."""
+    for file_record in reversed(state.get("files", [])):
+        file_record["nwb_io"].close()
+    state.clear()
+
+
+def _files() -> list[dict[str, Any]]:
+    """Return the opened file records."""
+    return state["files"]
+
+
+def setup(context: neurodatabench.RunContext) -> None:
+    """Materialize each remote Zarr store as a PyNWB NWBFile."""
+    backend = _backend()
+    if backend != "s3fs":
+        raise ValueError(f"NWBZarrIO does not support configured backend {backend!r}.")
+    logger.debug(
+        "Opening %d Zarr stores through NWBZarrIO and s3fs.",
+        len(context.benchmark.data_sources),
+    )
+    _open_files(context.benchmark.data_sources)
+
+
+def clear_cache(context: neurodatabench.RunContext) -> None:
+    """Declare that this implementation has no managed local cache."""
+    logger.debug("No PyNWB Zarr cache to clear for %d paths.", len(context.benchmark.data_sources))
+
+
+def teardown(context: neurodatabench.RunContext) -> None:
+    """Close NWBZarrIO handles and clear materialized state."""
+    logger.debug("Closing NWBZarrIO handles for %d paths.", len(context.benchmark.data_sources))
+    _close_files()
+#endregion
+
+
+if __name__ == "__main__":
+    benchmark = os.environ.get("NDB_BENCHMARK", _DEFAULT_BENCHMARK)
+    neurodatabench.main(
+        implementation_id=os.environ.get(
+            "NDB_IMPLEMENTATION_ID",
+            f"{_DEFAULT_IMPLEMENTATION_ID}_{_backend()}",
+        ),
+        implementation_nwb_interface="pynwb/NWBZarrIO",
+        implementation_object_store_backend=_backend(),
+        implementation_local_cache=None,
+        implementation_remote_cache=False,
+        benchmark=benchmark,
+        setup=setup,
+        clear_cache=clear_cache,
+        submit_answers=submit_answers,
+        teardown=teardown,
+    )

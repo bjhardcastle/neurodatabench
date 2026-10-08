@@ -40,6 +40,7 @@ def find_repo_root(script_path: Path) -> Path:
 
 REPO_ROOT = find_repo_root(Path(__file__))
 
+BENCHMARK = "dynamic_routing"
 BENCHMARKS_BY_FORMAT = {
     "hdf5": "dynamic_routing_nwb_hdf5_v0",
     "zarr": "dynamic_routing_nwb_zarr_v0",
@@ -129,7 +130,7 @@ def default_matrix() -> list[neurodatabench.matrix.MatrixRun]:
         for backend in ("obstore", "remfile", "s3fs"):
             runs.append(
                 neurodatabench.matrix.MatrixRun(
-                    implementation="implementations/lazynwb/run.py",
+                    implementation=f"implementations/lazynwb/{BENCHMARK}.py",
                     benchmark=benchmark,
                     implementation_id=f"lazynwb-v0.2.91-{backend}",
                     object_store_backend=backend,
@@ -140,7 +141,7 @@ def default_matrix() -> list[neurodatabench.matrix.MatrixRun]:
         for local_cache in CACHE_STATUSES:
             runs.append(
                 neurodatabench.matrix.MatrixRun(
-                    implementation="implementations/lazynwb/run.py",
+                    implementation=f"implementations/lazynwb/{BENCHMARK}.py",
                     benchmark=benchmark,
                     implementation_id=f"lazynwb-1.0.0dev3-obstore-{local_cache}",
                     object_store_backend="obstore",
@@ -150,7 +151,7 @@ def default_matrix() -> list[neurodatabench.matrix.MatrixRun]:
             )
             runs.append(
                 neurodatabench.matrix.MatrixRun(
-                    implementation="implementations/lazynwb/run.py",
+                    implementation=f"implementations/lazynwb/{BENCHMARK}.py",
                     benchmark=benchmark,
                     implementation_id=f"lazynwb-dev-obstore-{local_cache}",
                     object_store_backend="obstore",
@@ -169,11 +170,12 @@ def default_matrix() -> list[neurodatabench.matrix.MatrixRun]:
             )
         )
 
+
     for zarr_major, zarr_requirement in (("2", "zarr<3"), ("3", "zarr>=3,<4")):
         for backend in ("s3fs", "obstore"):
             runs.append(
                 neurodatabench.matrix.MatrixRun(
-                    implementation="implementations/direct_zarr/run.py",
+                    implementation=f"implementations/direct_zarr/{BENCHMARK}.py",
                     benchmark=BENCHMARKS_BY_FORMAT["zarr"],
                     implementation_id=f"direct-zarr-v{zarr_major}-{backend}",
                     object_store_backend=backend,
@@ -183,7 +185,7 @@ def default_matrix() -> list[neurodatabench.matrix.MatrixRun]:
 
     runs.append(
         neurodatabench.matrix.MatrixRun(
-            implementation="implementations/pynwb_zarr/run.py",
+            implementation=f"implementations/pynwb_zarr/{BENCHMARK}.py",
             benchmark=BENCHMARKS_BY_FORMAT["zarr"],
             implementation_id="pynwb-s3fs",
             object_store_backend="s3fs",
@@ -200,6 +202,7 @@ def default_matrix() -> list[neurodatabench.matrix.MatrixRun]:
                 object_store_backend=backend,
             )
         )
+
     return runs
 
 
