@@ -47,7 +47,7 @@ state: dict[str, Any] = {}
 #region Dynamic Routing solutions
 def submit_answers(context: neurodatabench.RunContext) -> None:
     """Submit answers for every benchmark question."""
-    files = _files()
+    files = state["files"]
     for question in context.benchmark.questions:
         logger.debug("Answering benchmark question %s.", question.id)
         match question.id:
@@ -234,11 +234,6 @@ def _close_files() -> None:
     state.clear()
 
 
-def _files() -> list[dict[str, Any]]:
-    """Return the opened file records."""
-    return state["files"]
-
-
 def setup(context: neurodatabench.RunContext) -> None:
     """Materialize each remote Zarr store as a PyNWB NWBFile."""
     backend = _backend()
@@ -264,7 +259,6 @@ def teardown(context: neurodatabench.RunContext) -> None:
 
 
 if __name__ == "__main__":
-    benchmark = os.environ.get("NDB_BENCHMARK", _DEFAULT_BENCHMARK)
     neurodatabench.main(
         implementation_id=os.environ.get(
             "NDB_IMPLEMENTATION_ID",
@@ -274,7 +268,7 @@ if __name__ == "__main__":
         implementation_object_store_backend=_backend(),
         implementation_local_cache=None,
         implementation_remote_cache=False,
-        benchmark=benchmark,
+        benchmark=os.environ.get("NDB_BENCHMARK", _DEFAULT_BENCHMARK),
         setup=setup,
         clear_cache=clear_cache,
         submit_answers=submit_answers,

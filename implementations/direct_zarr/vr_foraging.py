@@ -288,7 +288,6 @@ class _ObstoreZarrV2Store(MutableMapping[str, bytes]):
 
 
 if __name__ == "__main__":
-    benchmark=os.environ.get("NDB_BENCHMARK", _DEFAULT_BENCHMARK)
     neurodatabench.main(
         implementation_id=os.environ.get(
             "NDB_IMPLEMENTATION_ID",
@@ -298,7 +297,7 @@ if __name__ == "__main__":
         implementation_object_store_backend=_backend(),
         implementation_local_cache=None,
         implementation_remote_cache=False,
-        benchmark=benchmark,
+        benchmark=os.environ.get("NDB_BENCHMARK", _DEFAULT_BENCHMARK),
         setup=setup,
         clear_cache=clear_cache,
         submit_answers=submit_answers,
