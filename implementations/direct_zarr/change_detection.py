@@ -193,7 +193,7 @@ def _quiet_storage_debug_loggers() -> None:
 # Zarr store access
 def _open_store(nwb_path: str) -> Any:
     """Open one remote NWB Zarr store as a read-only Zarr group."""
-    backend = os.environ.get("NDB_OBJECT_STORE_BACKEND", _DEFAULT_BACKEND)
+    backend = _backend()
     logger.debug("Opening NWB Zarr store %s through %s.", nwb_path, backend)
     if backend == "s3fs":
         if _is_zarr_v3():
