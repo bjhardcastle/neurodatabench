@@ -202,7 +202,6 @@ def default_matrix() -> list[neurodatabench.matrix.MatrixRun]:
                 object_store_backend=backend,
             )
         )
-
     return runs
 
 

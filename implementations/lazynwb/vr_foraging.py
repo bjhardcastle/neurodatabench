@@ -17,23 +17,22 @@
 
 from __future__ import annotations
 
-import importlib
+import importlib.metadata
 import os
 import tempfile
-from typing import Any
 from pathlib import Path
+from typing import Any
 
 import lazynwb
-import polars as pl
 import numpy as np
+import polars as pl
 
 import neurodatabench
 
 logger = neurodatabench.get_logger(__name__)
 
-
-_DEFAULT_BENCHMARK = "vr_foraging_nwb_zarr_v0"
 _DEFAULT_BACKEND = "obstore"
+_DEFAULT_BENCHMARK = "vr_foraging_nwb_zarr_v0"
 _STOP_VELOCITY_THRESHOLD_PATH = (
     "/acquisition/VrForagingDataset.Behavior.SoftwareEvents.StopVelocityThreshold"
 )
@@ -149,14 +148,14 @@ def _multisession_stopped_fraction(nwb_paths: list[str]) -> float:
 
 
 #region Runtime Configuration
-def backend() -> str:
+def _backend() -> str:
     """Return the requested lazynwb object-store backend label."""
     return os.environ.get("NDB_OBJECT_STORE_BACKEND", _DEFAULT_BACKEND)
 
 
-def configure_backend(backend: str) -> None:
+def _configure_backend(backend: str) -> None:
     """Configure backend switches exposed by the installed lazynwb version."""
-    version = lazynwb_version()
+    version = _lazynwb_version()
     logger.debug("Configuring lazynwb %s backend %s.", version, backend)
     if version.split(".", maxsplit=1)[0] == "0":
         if backend not in {"obstore", "remfile", "s3fs"}:
@@ -168,12 +167,12 @@ def configure_backend(backend: str) -> None:
         raise ValueError(f"lazynwb {version} uses obstore; got backend {backend!r}.")
 
 
-def lazynwb_version() -> str:
+def _lazynwb_version() -> str:
     """Return the installed lazynwb distribution version."""
     return importlib.metadata.version("lazynwb")
 
 
-def set_catalog_cache_path() -> Path:
+def _set_catalog_cache_path() -> Path:
     """Point lazynwb at a matrix-provided cache or a fresh isolated cache."""
     cache_path = os.environ.get("NDB_LAZYNWB_CACHE_PATH")
     if cache_path is None:
@@ -186,7 +185,7 @@ def set_catalog_cache_path() -> Path:
     return Path(cache_path)
 
 
-def local_cache() -> neurodatabench.models.LocalCacheState:
+def _local_cache() -> neurodatabench.models.LocalCacheState:
     """Return local cache metadata declared for this run."""
     value = os.environ.get("NDB_LOCAL_CACHE", "cold")
     if value not in {"cold", "warm"}:
@@ -194,10 +193,10 @@ def local_cache() -> neurodatabench.models.LocalCacheState:
     return value  # type: ignore[return-value]
 
 
-def default_implementation_id() -> str:
+def _default_implementation_id() -> str:
     """Return an ID containing the installed lazynwb version and backend."""
-    version = lazynwb_version().replace(".", "_").replace("+", "_")
-    return f"lazynwb_{version}_{backend()}"
+    version = _lazynwb_version().replace(".", "_").replace("+", "_")
+    return f"lazynwb_{version}_{_backend()}"
 
 
 def clear_cache(context: neurodatabench.RunContext) -> None:
@@ -206,7 +205,7 @@ def clear_cache(context: neurodatabench.RunContext) -> None:
         "Clearing lazynwb caches for %d NWB paths before measured phases.",
         len(context.benchmark.data_sources),
     )
-    cache_path = set_catalog_cache_path()
+    cache_path = _set_catalog_cache_path()
     for path in (cache_path, Path(f"{cache_path}-shm"), Path(f"{cache_path}-wal")):
         path.unlink(missing_ok=True)
 
@@ -214,14 +213,12 @@ def clear_cache(context: neurodatabench.RunContext) -> None:
 def setup(context: neurodatabench.RunContext) -> None:
     """Configure lazynwb before answering benchmark questions."""
     logger.debug("Preparing lazynwb for %d NWB paths.", len(context.benchmark.data_sources))
-    set_catalog_cache_path()
+    _set_catalog_cache_path()
     os.environ.setdefault("AWS_REGION", "us-west-2")
 
     lazynwb.config.anon = True
-    configure_backend(backend())
+    _configure_backend(_backend())
     state.clear()
-
-    _get_trials_table(context.benchmark.data_sources)
 
 
 def teardown(context: neurodatabench.RunContext) -> None:
@@ -232,19 +229,18 @@ def teardown(context: neurodatabench.RunContext) -> None:
 
 
 if __name__ == "__main__":
-    benchmark = os.environ.get("NDB_BENCHMARK", _DEFAULT_BENCHMARK)
     neurodatabench.main(
         implementation_id=os.environ.get(
             "NDB_IMPLEMENTATION_ID",
-            default_implementation_id(),
+            _default_implementation_id(),
         ),
         implementation_nwb_interface="lazynwb",
-        implementation_object_store_backend=backend(),
-        implementation_local_cache=local_cache(),
+        implementation_object_store_backend=_backend(),
+        implementation_local_cache=_local_cache(),
         implementation_remote_cache=False,
-        benchmark=benchmark,
+        benchmark=os.environ.get("NDB_BENCHMARK", _DEFAULT_BENCHMARK),
         setup=setup,
-        clear_cache=None if local_cache() == "warm" else clear_cache,
+        clear_cache=None if _local_cache() == "warm" else clear_cache,
         submit_answers=submit_answers,
         teardown=teardown,
     )
