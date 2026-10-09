@@ -25,14 +25,18 @@ class MatrixRun:
 
     ``implementation_id`` is the logical run name used in logs and metadata.
     Its filesystem representation is sanitized when building output paths.
+    ``benchmark_source`` optionally points at an unreleased benchmark while
+    ``benchmark`` remains the stable ID used to organize result directories.
     """
 
     implementation: str
     benchmark: str
     implementation_id: str
+    benchmark_source: str | None = None
     object_store_backend: str | None = None
     local_cache: neurodatabench.models.LocalCacheState | None = None
     dependencies: tuple[str, ...] = ()
+    editable_dependencies: tuple[str, ...] = ()
     environment: dict[str, str] = dataclasses.field(default_factory=dict)
 
 
@@ -171,6 +175,8 @@ def _command_for(
     child_command = ["uv", "run", "--python", python_version]
     for dependency in run.dependencies:
         child_command.extend(("--with", dependency))
+    for dependency in run.editable_dependencies:
+        child_command.extend(("--with-editable", dependency))
     child_command.extend((run.implementation, "--log-level", log_level))
     if profile_interval_ms is not None:
         child_command.extend(("--profile-interval-ms", str(profile_interval_ms)))
@@ -186,7 +192,7 @@ def _command_for(
         "neurodatabench.runner",
         "supervise",
         "--benchmark",
-        run.benchmark,
+        run.benchmark_source or run.benchmark,
     ]
     if timeout_seconds is not None:
         command.extend(("--timeout-seconds", str(timeout_seconds)))
@@ -225,7 +231,7 @@ def _environment_for(run: MatrixRun, *, output_root: Path) -> dict[str, str]:
         environment.pop(name, None)
     environment.update(run.environment)
     environment["AWS_REGION"] = environment.get("AWS_REGION", "us-west-2")
-    environment["NDB_BENCHMARK"] = run.benchmark
+    environment["NDB_BENCHMARK"] = run.benchmark_source or run.benchmark
     environment["NDB_IMPLEMENTATION_ID"] = run.implementation_id
     if run.object_store_backend is not None:
         environment["NDB_OBJECT_STORE_BACKEND"] = run.object_store_backend

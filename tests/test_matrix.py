@@ -47,6 +47,35 @@ class MatrixTests(unittest.TestCase):
         self.assertIn("neurodatabench.runner", command)
         self.assertIn("--timeout-profile-out", command)
 
+    def test_unreleased_benchmark_source_is_forwarded(self) -> None:
+        """A local benchmark source should reach both supervisor and implementation."""
+        run = neurodatabench.matrix.MatrixRun(
+            implementation="implementation.py",
+            benchmark="benchmark-id",
+            benchmark_source="benchmarks/unreleased.json",
+            implementation_id="reader",
+        )
+        command = neurodatabench.matrix._command_for(
+            run,
+            run_output_dir=Path("results"),
+            profile_interval_ms=None,
+            timeout_seconds=None,
+            no_timeout=False,
+            log_level="INFO",
+        )
+        environment = neurodatabench.matrix._environment_for(
+            run,
+            output_root=Path("results"),
+        )
+
+        benchmark_index = command.index("--benchmark")
+        self.assertEqual(command[benchmark_index + 1], "benchmarks/unreleased.json")
+        self.assertEqual(environment["NDB_BENCHMARK"], "benchmarks/unreleased.json")
+        self.assertEqual(
+            neurodatabench.matrix._run_output_dir(run, Path("results")),
+            Path("results") / "benchmark-id" / "reader",
+        )
+
     def test_timeout_is_recorded_as_benchmark_outcome(self) -> None:
         """A supervised timeout should not be reported as an orchestration failure."""
         run = neurodatabench.matrix.MatrixRun(
