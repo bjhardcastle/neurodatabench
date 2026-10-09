@@ -52,7 +52,7 @@ class Settings(pydantic_settings.BaseSettings):
 
     benchmark: Literal["dynamic_routing_nwb_v0"] = "dynamic_routing_nwb_v0"
     object_store_backend: Literal["remfile", "s3fs", "ros", "obstore"] = "remfile"
-    implementation_id: str = "pynwb_hdf5_nwbfile"
+    implementation_id: str = "pynwb"
     aws_region: str = "us-west-2"
 
 

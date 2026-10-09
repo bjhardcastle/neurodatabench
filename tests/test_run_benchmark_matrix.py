@@ -186,15 +186,15 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
             self.assertIn("-- uv run", output)
             self.assertFalse(output_root.exists())
 
-    def test_pynwb_zarr_row_is_selectable(self) -> None:
-        """The PyNWB/HDMF-Zarr matrix row should use its real s3fs backend."""
+    def test_pynwb_row_is_selectable(self) -> None:
+        """The generic PyNWB matrix row should use its real s3fs backend."""
         completed = subprocess.run(
             [
                 sys.executable,
                 "scripts/run_benchmark_matrix.py",
                 "--dry-run",
                 "--only",
-                "pynwb-zarr",
+                "pynwb-s3fs",
             ],
             check=False,
             cwd=Path(__file__).resolve().parents[1],
@@ -205,9 +205,8 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
         output = completed.stdout + completed.stderr
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("Starting 1 matrix run(s).", output)
-        self.assertIn("pynwb-zarr-v2-s3fs", output)
-        self.assertNotIn("pynwb-zarr-v2-obstore", output)
-        self.assertIn("implementations/pynwb_zarr_template.py", output)
+        self.assertIn("pynwb-s3fs", output)
+        self.assertIn("implementations/pynwb/dynamic_routing_nwb_v0.py", output)
         self.assertIn("--with zarr<3", output)
 
     def test_default_matrix_omits_unsupported_ros3_rows(self) -> None:

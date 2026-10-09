@@ -48,7 +48,7 @@ class Settings(pydantic_settings.BaseSettings):
 
     benchmark: Literal["dynamic_routing_nwb_v0"] = "dynamic_routing_nwb_v0"
     object_store_backend: Literal["s3fs", "obstore"] = "s3fs"
-    implementation_id: str = "pynwb_hdmf_zarr"
+    implementation_id: str = "pynwb"
 
 
 settings: Settings | None = None

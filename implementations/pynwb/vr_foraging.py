@@ -46,7 +46,7 @@ class Settings(pydantic_settings.BaseSettings):
 
     benchmark: Literal["vr_foraging_nwb_v0"] = "vr_foraging_nwb_v0"
     object_store_backend: Literal["s3fs", "obstore"] = "s3fs"
-    implementation_id: str = "pynwb_hdmf_zarr"
+    implementation_id: str = "pynwb"
 
 
 settings: Settings | None = None

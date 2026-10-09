@@ -182,7 +182,7 @@ def default_matrix() -> list[neurodatabench.matrix.MatrixRun]:
 
     runs.append(
         neurodatabench.matrix.MatrixRun(
-            implementation=f"implementations/pynwb_zarr/{BENCHMARK}.py",
+            implementation=f"implementations/pynwb/{BENCHMARK}.py",
             benchmark=BENCHMARK,
             implementation_id="pynwb-s3fs",
             object_store_backend="s3fs",
@@ -193,7 +193,7 @@ def default_matrix() -> list[neurodatabench.matrix.MatrixRun]:
     for backend in H5PY_REMOTE_FILE_BACKENDS:
         runs.append(
             neurodatabench.matrix.MatrixRun(
-                implementation="implementations/pynwb_hdf5_template.py",
+                implementation="implementations/pynwb_template.py",
                 benchmark=BENCHMARK,
                 implementation_id=f"pynwb-{backend}",
                 object_store_backend=backend,
