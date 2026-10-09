@@ -18,8 +18,6 @@
 
 from __future__ import annotations
 
-from typing import Literal
-
 import escapewheel_reader
 import numpy as np
 import pydantic_settings
@@ -39,12 +37,13 @@ class Settings(pydantic_settings.BaseSettings):
 
     model_config = pydantic_settings.SettingsConfigDict(
         cli_implicit_flags=True,
+        cli_ignore_unknown_args=True,
         cli_kebab_case=True,
         cli_parse_args=True,
         env_prefix="NDB_",
     )
 
-    benchmark: Literal["dynamic_foraging_nwb_v0"] = "dynamic_foraging_nwb_v0"
+    benchmark: str = "dynamic_foraging_nwb_v0"
     implementation_id: str = "escapewheel"
 
 
