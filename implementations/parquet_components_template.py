@@ -21,30 +21,50 @@ from __future__ import annotations
 
 import functools
 import logging
-import os
 from collections.abc import Iterator
 from contextlib import contextmanager
+from typing import Literal
 from urllib.parse import quote
 
 import h5py
 import numpy as np
 import polars as pl
+import pydantic_settings
 import remfile
 
 import neurodatabench
 
 logger = neurodatabench.get_logger(__name__)
 
-_DEFAULT_BENCHMARK = "dynamic_routing_nwb_v0"
 _SOURCE_TYPE = "hdf5"
-_DEFAULT_COMPONENT_BASE_URL = (
-    "s3://aind-scratch-data/"
-    "dynamic-routing/cache/nwb_components/v0.0.273"
-)
-_DEFAULT_IMPLEMENTATION_ID = "parquet_components"
-_OBJECT_STORE_BACKEND = "polars_s3_anon"
 _FACEMAP_DOWNLOAD_ROWS = 12_850
 _FACEMAP_DOWNLOAD_COLUMNS = 128
+
+
+class Settings(pydantic_settings.BaseSettings):
+    """Command-line and environment settings for the parquet runner."""
+
+    model_config = pydantic_settings.SettingsConfigDict(
+        cli_implicit_flags=True, cli_kebab_case=True, cli_parse_args=True, env_prefix="NDB_"
+    )
+
+    benchmark: Literal["dynamic_routing_nwb_v0"] = "dynamic_routing_nwb_v0"
+    object_store_backend: Literal["polars_s3_anon"] = "polars_s3_anon"
+    implementation_id: str = "parquet_components"
+    parquet_component_base_url: str = (
+        "s3://aind-scratch-data/dynamic-routing/cache/nwb_components/v0.0.273"
+    )
+    aws_region: str = "us-west-2"
+
+
+settings: Settings | None = None
+
+
+def _settings() -> Settings:
+    """Return the resolved implementation settings."""
+    if settings is None:
+        raise RuntimeError("Settings must be initialized before running the implementation.")
+    return settings
 
 
 def setup(context: neurodatabench.RunContext) -> None:
@@ -53,7 +73,7 @@ def setup(context: neurodatabench.RunContext) -> None:
         "Preparing parquet-component access for %d NWB-derived sessions.",
         len(context.benchmark.data_sources[_SOURCE_TYPE]),
     )
-    if context.benchmark.id != _DEFAULT_BENCHMARK:
+    if context.benchmark.id != _settings().benchmark:
         raise ValueError(
             "The parquet component cache mirrors dynamic_routing_nwb_v0; "
             f"got {context.benchmark.id!r}."
@@ -104,10 +124,7 @@ def _quiet_storage_debug_loggers() -> None:
 
 def _component_base_url() -> str:
     """Return the remote parquet component cache root."""
-    return os.environ.get(
-        "NDB_PARQUET_COMPONENT_BASE_URL",
-        _DEFAULT_COMPONENT_BASE_URL,
-    ).rstrip("/")
+    return _settings().parquet_component_base_url.rstrip("/")
 
 
 def _component_url(component_name: str, session_id: str) -> str:
@@ -133,7 +150,7 @@ def _storage_options_for(url: str) -> dict[str, str] | None:
         return None
     return {
         "skip_signature": "true",
-        "region": os.environ.get("AWS_REGION", "us-west-2"),
+        "region": _settings().aws_region,
     }
 
 
@@ -281,19 +298,14 @@ def _to_https_url(nwb_path: str) -> str:
 
 
 if __name__ == "__main__":
+    settings = Settings()
     neurodatabench.main(
-        implementation_id=os.environ.get(
-            "NDB_IMPLEMENTATION_ID",
-            _DEFAULT_IMPLEMENTATION_ID,
-        ),
+        implementation_id=settings.implementation_id,
         implementation_nwb_interface=None,
-        implementation_object_store_backend=os.environ.get(
-            "NDB_OBJECT_STORE_BACKEND",
-            _OBJECT_STORE_BACKEND,
-        ),
+        implementation_object_store_backend=settings.object_store_backend,
         implementation_local_cache=None,
         implementation_remote_cache=True,
-        benchmark=os.environ.get("NDB_BENCHMARK", _DEFAULT_BENCHMARK),
+        benchmark=settings.benchmark,
         setup=setup,
         clear_cache=clear_cache,
         submit_answers=submit_answers,

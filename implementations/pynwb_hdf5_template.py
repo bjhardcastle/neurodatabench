@@ -23,12 +23,12 @@
 from __future__ import annotations
 
 import logging
-import os
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import quote
 
 import h5py
 import numpy as np
+import pydantic_settings
 import pynwb
 import remfile
 
@@ -38,12 +38,32 @@ logger = neurodatabench.get_logger(__name__)
 
 state: dict[str, Any] = {}
 
-_DEFAULT_BACKEND = "remfile"
 _SOURCE_TYPE = "hdf5"
-_DEFAULT_BENCHMARK = "dynamic_routing_nwb_v0"
-_DEFAULT_IMPLEMENTATION_ID = "pynwb_hdf5_nwbfile"
 _FACEMAP_DOWNLOAD_ROWS = 12_850
 _FACEMAP_DOWNLOAD_COLUMNS = 128
+
+
+class Settings(pydantic_settings.BaseSettings):
+    """Command-line and environment settings for the PyNWB HDF5 runner."""
+
+    model_config = pydantic_settings.SettingsConfigDict(
+        cli_implicit_flags=True, cli_kebab_case=True, cli_parse_args=True, env_prefix="NDB_"
+    )
+
+    benchmark: Literal["dynamic_routing_nwb_v0"] = "dynamic_routing_nwb_v0"
+    object_store_backend: Literal["remfile", "s3fs", "ros", "obstore"] = "remfile"
+    implementation_id: str = "pynwb_hdf5_nwbfile"
+    aws_region: str = "us-west-2"
+
+
+settings: Settings | None = None
+
+
+def _settings() -> Settings:
+    """Return the resolved implementation settings."""
+    if settings is None:
+        raise RuntimeError("Settings must be initialized before running the implementation.")
+    return settings
 
 
 def setup(context: neurodatabench.RunContext) -> None:
@@ -127,7 +147,7 @@ def _quiet_storage_debug_loggers() -> None:
 
 def _backend() -> str:
     """Return the requested PyNWB HDF5 object-store backend label."""
-    return os.environ.get("NDB_OBJECT_STORE_BACKEND", _DEFAULT_BACKEND)
+    return _settings().object_store_backend
 
 
 def _open_binary_file(nwb_path: str) -> Any:
@@ -147,7 +167,7 @@ def _open_binary_file(nwb_path: str) -> Any:
         bucket, key = _split_s3_uri(nwb_path)
         filesystem = obstore_fsspec.FsspecStore(
             "s3",
-            config={"region": os.environ.get("AWS_REGION", "us-west-2")},
+            config={"region": _settings().aws_region},
             skip_signature=True,
         )
         return filesystem.open(f"{bucket}/{key}", mode="rb")
@@ -299,16 +319,14 @@ def _large_array(file_records: list[dict[str, Any]]) -> float:
 
 
 if __name__ == "__main__":
+    settings = Settings()
     neurodatabench.main(
-        implementation_id=os.environ.get(
-            "NDB_IMPLEMENTATION_ID",
-            f"{_DEFAULT_IMPLEMENTATION_ID}_{_backend()}",
-        ),
+        implementation_id=settings.implementation_id,
         implementation_nwb_interface="pynwb",
         implementation_object_store_backend=_backend(),
         implementation_local_cache=None,
         implementation_remote_cache=False,
-        benchmark=os.environ.get("NDB_BENCHMARK", _DEFAULT_BENCHMARK),
+        benchmark=settings.benchmark,
         setup=setup,
         clear_cache=clear_cache,
         submit_answers=submit_answers,

@@ -22,21 +22,41 @@
 
 from __future__ import annotations
 
-import os
+from typing import Any, Literal
+
 import numpy as np
 import pandas as pd
-from typing import Any
+import pydantic_settings
 from hdmf_zarr import NWBZarrIO
 
 import neurodatabench
 
 logger = neurodatabench.get_logger(__name__)
 
-_DEFAULT_BENCHMARK = "vr_foraging_nwb_v0"
-_DEFAULT_IMPLEMENTATION_ID = "pynwb_hdmf_zarr"
-_DEFAULT_BACKEND = "s3fs"
 _SOURCE_TYPE = "zarr"
 _STOP_VELOCITY_THRESHOLD = "VrForagingDataset.Behavior.SoftwareEvents.StopVelocityThreshold"
+
+
+class Settings(pydantic_settings.BaseSettings):
+    """Command-line and environment settings for the PyNWB Zarr runner."""
+
+    model_config = pydantic_settings.SettingsConfigDict(
+        cli_implicit_flags=True, cli_kebab_case=True, cli_parse_args=True, env_prefix="NDB_"
+    )
+
+    benchmark: Literal["vr_foraging_nwb_v0"] = "vr_foraging_nwb_v0"
+    object_store_backend: Literal["s3fs", "obstore"] = "s3fs"
+    implementation_id: str = "pynwb_hdmf_zarr"
+
+
+settings: Settings | None = None
+
+
+def _settings() -> Settings:
+    """Return the resolved implementation settings."""
+    if settings is None:
+        raise RuntimeError("Settings must be initialized before running the implementation.")
+    return settings
 
 
 state: dict[str, Any] = {}
@@ -152,7 +172,7 @@ def _string_array(values: Any) -> np.ndarray:
 #region Runtime Configuration
 def _backend() -> str:
     """Return the requested NWBZarrIO object-store backend."""
-    return os.environ.get("NDB_OBJECT_STORE_BACKEND", _DEFAULT_BACKEND)
+    return _settings().object_store_backend
 
 
 def _open_files(data_sources: list[str]) -> None:
@@ -209,16 +229,14 @@ def teardown(context: neurodatabench.RunContext) -> None:
 
 
 if __name__ == "__main__":
+    settings = Settings()
     neurodatabench.main(
-        implementation_id=os.environ.get(
-            "NDB_IMPLEMENTATION_ID",
-            f"{_DEFAULT_IMPLEMENTATION_ID}_{_backend()}",
-        ),
+        implementation_id=settings.implementation_id,
         implementation_nwb_interface="pynwb/NWBZarrIO",
         implementation_object_store_backend=_backend(),
         implementation_local_cache=None,
         implementation_remote_cache=False,
-        benchmark=os.environ.get("NDB_BENCHMARK", _DEFAULT_BENCHMARK),
+        benchmark=settings.benchmark,
         setup=setup,
         clear_cache=clear_cache,
         submit_answers=submit_answers,
