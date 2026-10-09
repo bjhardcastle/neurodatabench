@@ -44,7 +44,7 @@ class Settings(pydantic_settings.BaseSettings):
     )
 
     benchmark: str = "dynamic_foraging_nwb_v0"
-    implementation_id: str = "escapewheel"
+    implementation_id: str = "escapewheel-reader"
 
 
 settings: Settings | None = None

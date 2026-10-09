@@ -105,7 +105,7 @@ def dynamic_foraging_matrix() -> list[neurodatabench.matrix.MatrixRun]:
         neurodatabench.matrix.MatrixRun(
             implementation="implementations/escapewheel/dynamic_foraging.py",
             benchmark=BENCHMARK,
-            implementation_id="escapewheel",
+            implementation_id="escapewheel-reader",
             benchmark_source=BENCHMARK_SOURCE,
             editable_dependencies=(".",),
         ),

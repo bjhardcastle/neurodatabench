@@ -25,6 +25,7 @@ class DynamicForagingMatrixScriptTests(unittest.TestCase):
         self.assertIn("implementations/escapewheel/dynamic_foraging.py", output)
         self.assertIn("lazynwb-1.0.0dev3-obstore-hdf5-cold", output)
         self.assertIn("lazynwb-1.0.0dev3-obstore-zarr-cold", output)
+        self.assertIn("escapewheel-reader", output)
         self.assertEqual(output.count("--with-editable ."), 3)
         self.assertEqual(
             output.count(
@@ -37,7 +38,7 @@ class DynamicForagingMatrixScriptTests(unittest.TestCase):
 
     def test_only_selects_escapewheel(self) -> None:
         """The standard matrix selector should support a single reader run."""
-        completed = self._dry_run("--only", "escapewheel")
+        completed = self._dry_run("--only", "escapewheel-reader")
         output = completed.stdout + completed.stderr
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
