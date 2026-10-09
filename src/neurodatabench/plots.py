@@ -556,7 +556,6 @@ def _dashboard_title(metadata: neurodatabench.models.JsonObject) -> alt.TitlePar
         _metadata_label_value(metadata, "datetime_utc", "UTC"),
         _metadata_label_value(metadata, "hostname", "host"),
         _metadata_label_value(metadata, "benchmark_harness_version", "harness"),
-        _metadata_label_value(metadata, ("benchmark", "data_sources"), "source types"),
         _metadata_label_value(
             metadata,
             ("implementation", "nwb_interface"),

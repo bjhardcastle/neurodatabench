@@ -284,6 +284,7 @@ if __name__ == "__main__":
     settings = Settings()
     neurodatabench.main(
         implementation_id=settings.implementation_id,
+        implementation_source_type=_SOURCE_TYPE,
         implementation_nwb_interface=None,
         implementation_object_store_backend="pyarrow",
         implementation_local_cache=None,

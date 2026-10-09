@@ -258,6 +258,7 @@ if __name__ == "__main__":
     settings = Settings()
     neurodatabench.main(
         implementation_id=settings.implementation_id,
+        implementation_source_type=settings.source_type,
         implementation_nwb_interface="lazynwb",
         implementation_object_store_backend=_backend(),
         implementation_local_cache=_local_cache(),

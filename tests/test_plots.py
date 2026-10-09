@@ -9,10 +9,29 @@ from pathlib import Path
 
 import neurodatabench.models
 import neurodatabench.plots
+import neurodatabench.runner
 
 
 class PlotTests(unittest.TestCase):
     """Exercise chart-specific data shaping behavior."""
+
+    def test_leaderboard_source_type_uses_implementation_selection(self) -> None:
+        """A run's legend format should not list unrelated benchmark formats."""
+        source_type = neurodatabench.runner._leaderboard_source_type(
+            {"source_type": "zarr"},
+            {"data_sources": {"escapewheel": [], "hdf5": [], "zarr": []}},
+        )
+
+        self.assertEqual(source_type, "zarr")
+
+    def test_leaderboard_source_type_falls_back_for_old_metadata(self) -> None:
+        """Old results should retain their previous complete-source labeling."""
+        source_type = neurodatabench.runner._leaderboard_source_type(
+            {},
+            {"data_sources": {"zarr": [], "hdf5": []}},
+        )
+
+        self.assertEqual(source_type, "hdf5,zarr")
 
     def test_leaderboard_plot_chart_has_stage_and_resource_axes(self) -> None:
         """Leaderboard should align stage timing, memory, and network panels."""
@@ -224,6 +243,7 @@ class PlotTests(unittest.TestCase):
             title["text"],
             "NeuroDataBench: implementation / benchmark",
         )
+        self.assertNotIn("source types", title.get("subtitle", ""))
         self.assertIn("NWB interface pynwb", title["subtitle"])
         self.assertIn("object store remfile", title["subtitle"])
 

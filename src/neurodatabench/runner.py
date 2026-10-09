@@ -247,6 +247,7 @@ def main(
     setup: Callable[[neurodatabench.models.RunContext], None],
     submit_answers: Callable[[neurodatabench.models.RunContext], None],
     implementation_id: str,
+    implementation_source_type: str | None = None,
     implementation_nwb_interface: str | None = None,
     implementation_object_store_backend: str | None = None,
     implementation_local_cache: neurodatabench.models.LocalCacheState | None = None,
@@ -265,6 +266,7 @@ def main(
     logger.debug("Resolving runner configuration.")
     implementation = neurodatabench.models.Implementation(
         id=implementation_id,
+        source_type=implementation_source_type or os.environ.get("NDB_SOURCE_TYPE"),
         nwb_interface=implementation_nwb_interface,
         object_store_backend=implementation_object_store_backend,
         local_cache=implementation_local_cache,
@@ -713,6 +715,7 @@ def _write_timeout_profile_artifacts(
             object_store_backend=os.environ.get("NDB_OBJECT_STORE_BACKEND"),
             local_cache=local_cache,
             remote_cache=None,
+            source_type=os.environ.get("NDB_SOURCE_TYPE"),
         )
         metadata = _run_metadata(
             implementation=implementation,
@@ -1095,9 +1098,7 @@ def _leaderboard_row(run_dir: Path) -> neurodatabench.models.JsonObject | None:
         "nwb_interface": implementation.get("nwb_interface"),
         "object_store_backend": implementation.get("object_store_backend"),
         "benchmark_id": str(benchmark.get("id", "unknown")),
-        "source_types": ",".join(sorted(benchmark.get("data_sources", {})))
-        if isinstance(benchmark.get("data_sources"), dict)
-        else "",
+        "source_types": _leaderboard_source_type(implementation, benchmark),
         "local_cache": str(implementation.get("local_cache", "")),
         "remote_cache": str(implementation.get("remote_cache", "")),
         "correct": correct,
@@ -1134,6 +1135,24 @@ def _leaderboard_row(run_dir: Path) -> neurodatabench.models.JsonObject | None:
         if timeout_seconds is not None:
             row["timeout_seconds"] = timeout_seconds
     return row
+
+
+def _leaderboard_source_type(
+    implementation: dict[str, neurodatabench.models.JsonValue],
+    benchmark: dict[str, neurodatabench.models.JsonValue],
+) -> str:
+    """Return the selected data-source type for a leaderboard row.
+
+    Older result metadata does not include the implementation selection, so retain
+    the complete benchmark source list as a fallback for those artifacts.
+    """
+    source_type = implementation.get("source_type")
+    if isinstance(source_type, str) and source_type:
+        return source_type
+    data_sources = benchmark.get("data_sources")
+    if isinstance(data_sources, dict):
+        return ",".join(sorted(str(source_type) for source_type in data_sources))
+    return ""
 
 
 def _leaderboard_timing_segments(

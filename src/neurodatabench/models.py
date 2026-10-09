@@ -48,6 +48,8 @@ class Implementation:
     """The state of the implementation's local cache, if any"""
     remote_cache: bool | None
     """Whether the implementation depends on a pre-computed cache object ranges (e.g. kerchunk/lindi)"""
+    source_type: str | None = None
+    """The benchmark data-source format selected by the implementation, if any."""
 
     def __post_init__(self) -> None:
         """Reject local cache metadata outside the public cold/warm/none states."""
