@@ -32,9 +32,10 @@ import neurodatabench
 
 logger = neurodatabench.get_logger(__name__)
 
-_DEFAULT_BENCHMARK = "vr_foraging_nwb_zarr_v0"
+_DEFAULT_BENCHMARK = "vr_foraging_nwb_v0"
 _DEFAULT_IMPLEMENTATION_ID = "pynwb_hdmf_zarr"
 _DEFAULT_BACKEND = "s3fs"
+_SOURCE_TYPE = "zarr"
 _STOP_VELOCITY_THRESHOLD = "VrForagingDataset.Behavior.SoftwareEvents.StopVelocityThreshold"
 
 
@@ -190,19 +191,19 @@ def setup(context: neurodatabench.RunContext) -> None:
         raise ValueError(f"NWBZarrIO does not support configured backend {backend!r}.")
     logger.debug(
         "Opening %d Zarr stores through NWBZarrIO and s3fs.",
-        len(context.benchmark.data_sources),
+        len(context.benchmark.data_sources[_SOURCE_TYPE]),
     )
-    _open_files(context.benchmark.data_sources)
+    _open_files(context.benchmark.data_sources[_SOURCE_TYPE])
 
 
 def clear_cache(context: neurodatabench.RunContext) -> None:
     """Declare that this implementation has no managed local cache."""
-    logger.debug("No PyNWB Zarr cache to clear for %d paths.", len(context.benchmark.data_sources))
+    logger.debug("No PyNWB Zarr cache to clear for %d paths.", len(context.benchmark.data_sources[_SOURCE_TYPE]))
 
 
 def teardown(context: neurodatabench.RunContext) -> None:
     """Close NWBZarrIO handles and clear materialized state."""
-    logger.debug("Closing NWBZarrIO handles for %d paths.", len(context.benchmark.data_sources))
+    logger.debug("Closing NWBZarrIO handles for %d paths.", len(context.benchmark.data_sources[_SOURCE_TYPE]))
     _close_files()
 #endregion
 

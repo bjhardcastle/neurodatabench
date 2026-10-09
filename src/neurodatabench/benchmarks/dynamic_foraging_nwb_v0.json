@@ -1,0 +1,97 @@
+{
+  "id": "dynamic_foraging_nwb_v0",
+  "timeout_seconds": 180,
+  "data_sources": {
+    "hdf5": [
+      "s3://aind-scratch-data/galen.lynch/nwb-lake-bench/r164/ecephys_776259_2025-04-09_17-25-12/ecephys_776259_2025-04-09_17-25-12_experiment1_recording1.nwb",
+      "s3://aind-scratch-data/galen.lynch/nwb-lake-bench/r164/ecephys_786867_2025-09-25_12-43-56/ecephys_786867_2025-09-25_12-43-56_experiment1_recording1.nwb"
+    ],
+    "zarr": [
+    "s3://aind-scratch-data/galen.lynch/nwb-lake-bench/r164/ecephys_776259_2025-04-09_17-25-12/ecephys_776259_2025-04-09_17-25-12_experiment1_recording1.nwb.zarr",
+    "s3://aind-scratch-data/galen.lynch/nwb-lake-bench/r164/ecephys_786867_2025-09-25_12-43-56/ecephys_786867_2025-09-25_12-43-56_experiment1_recording1.nwb.zarr"
+    ]
+  },
+  "questions": [
+    {
+      "id": "units_five_columns",
+      "text": "For each source, read `ks_unit_id`, `device_name`, `firing_rate`, `num_spikes`, and `default_qc` from its NWB units table. Return the number of rows for session 776259, then session 786867.",
+      "answer": [6781, 4505]
+    },
+    {
+      "id": "trial_count",
+      "text": "For each source, read every row of `intervals/trials`. Return the trial count for session 776259, then session 786867.",
+      "answer": [708, 450]
+    },
+    {
+      "id": "all_spike_times_sum",
+      "text": "For each source, read every recorded spike time from its NWB units table and sum the times. Return the sum for session 776259, then session 786867.",
+      "answer": [3322068097369328.0, 1895772623540943.0]
+    },
+    {
+      "id": "spikes_in_ten_second_window",
+      "text": "For each source, read all unit spike times in that session's ten-second reference-clock window from 100 through 110 seconds, excluding the upper bound. Return the count for session 776259, then session 786867.",
+      "answer": [349553, 294524]
+    },
+    {
+      "id": "one_unit_spike_train",
+      "text": "For session 776259, read the reference-clock train for KS unit label `671` on probe `45883-2`; for session 786867, read the train for KS unit label `5` on probe `46101`. Return the spike count for 776259, then 786867.",
+      "answer": [1789113, 518291]
+    },
+    {
+      "id": "mediodorsal_units_and_spikes",
+      "text": "For each source, find units with an electrode in MD and read their spike trains. Return objects with `units` and total `spikes`, first for session 776259 and then for session 786867.",
+      "answer": [
+        {"units": 409, "spikes": 29394216},
+        {"units": 140, "spikes": 5424090}
+      ]
+    },
+    {
+      "id": "single_unit_ccf_positions",
+      "text": "For each source, use single units (`decoder_label` = `sua`) with a CCF position. Return objects with the number of units, the sum of all CCF coordinate values, and the sum of their spike counts, first for session 776259 and then for session 786867.",
+      "answer": [
+        {"units": 1700, "coordinate_sum": 21480774.4, "spikes": 44112996},
+        {"units": 1471, "coordinate_sum": 21512989.6, "spikes": 47570176}
+      ]
+    },
+    {
+      "id": "md_single_unit_waveforms",
+      "text": "For each source, read the mean waveform for every single unit in MD and calculate each unit's minimum waveform value. Return objects with the unit count and the sum of minima in microvolts, first for session 776259 and then for session 786867.",
+      "answer": [
+        {"units": 93, "minimum_sum_uv": -11394},
+        {"units": 64, "minimum_sum_uv": -6410}
+      ]
+    },
+    {
+      "id": "lick_latency",
+      "text": "For each source, find the first left- or right-lick after each go cue and before the next trial's cue. Return objects with `trials`, median latency in milliseconds as `median_ms`, and mean latency in milliseconds as `mean_ms`, first for session 776259 and then for session 786867.",
+      "answer": [
+        {"trials": 496, "median_ms": 243.024, "mean_ms": 1934.703},
+        {"trials": 424, "median_ms": 154.336, "mean_ms": 2003.166}
+      ]
+    },
+    {
+      "id": "go_cue_raster_summary",
+      "text": "For each source, build a go-cue raster containing every spike within [-1, +2] seconds of each go cue, with one row per (unit, trial, spike) pair. Return objects with `pairs`, `units`, `sum_sq`, `cells`, `cell_sq`, and `offset_s`, first for session 776259 and then for session 786867.",
+      "answer": [
+        {"pairs": 99452477, "units": 6774, "sum_sq": 9120460562185, "cells": 3509221, "cell_sq": 25499993525, "offset_s": 48470721.2},
+        {"pairs": 45723415, "units": 4503, "sum_sq": 1128758494307, "cells": 1819758, "cell_sq": 3045580545, "offset_s": 21717848.9}
+      ]
+    },
+    {
+      "id": "condition_psth_summary",
+      "text": "For each source, count every unit's spikes in 50 ms bins over [-1, +2) seconds around each go cue, grouped by the five response/reward conditions. Return objects with `spikes`, `cells`, `cell_sq`, and `bin_sum`, first for session 776259 and then for session 786867.",
+      "answer": [
+        {"spikes": 99452477, "cells": 1691892, "cell_sq": 57100839567, "bin_sum": 2908832231},
+        {"spikes": 45723415, "cells": 1215492, "cell_sq": 5302331369, "bin_sum": 1325983648}
+      ]
+    },
+    {
+      "id": "md_cross_correlogram_summary",
+      "text": "For each source, for every pair of single units in MD, histogram pairwise spike lags in 0.5 ms bins from -10 to +10 ms, excluding autocorrelations. Return objects with `pairs`, `cells`, `cell_sq`, and `abs_lag`, first for session 776259 and then for session 786867.",
+      "answer": [
+        {"pairs": 69374161, "cells": 175159, "cell_sq": 53606131237, "abs_lag": 705795997},
+        {"pairs": 17030331, "cells": 82406, "cell_sq": 9266187153, "abs_lag": 173132512}
+      ]
+    }
+  ]
+}

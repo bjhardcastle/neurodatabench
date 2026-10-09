@@ -889,7 +889,6 @@ def _run_metadata(
         "benchmark": {
             "id": benchmark.id,
             "source": benchmark_source,
-            "nwb_format": benchmark.nwb_format,
             "data_sources": benchmark.data_sources,
         },
         "python": {
@@ -1096,7 +1095,9 @@ def _leaderboard_row(run_dir: Path) -> neurodatabench.models.JsonObject | None:
         "nwb_interface": implementation.get("nwb_interface"),
         "object_store_backend": implementation.get("object_store_backend"),
         "benchmark_id": str(benchmark.get("id", "unknown")),
-        "nwb_format": str(benchmark.get("nwb_format", "unknown")),
+        "source_types": ",".join(sorted(benchmark.get("data_sources", {})))
+        if isinstance(benchmark.get("data_sources"), dict)
+        else "",
         "local_cache": str(implementation.get("local_cache", "")),
         "remote_cache": str(implementation.get("remote_cache", "")),
         "correct": correct,
@@ -1270,7 +1271,7 @@ def _write_leaderboard_csv(
         "nwb_interface",
         "object_store_backend",
         "benchmark_id",
-        "nwb_format",
+        "source_types",
         "local_cache",
         "remote_cache",
         "correct",

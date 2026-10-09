@@ -60,7 +60,7 @@ class PlotTests(unittest.TestCase):
             [
                 {
                     "implementation_id": implementation_id,
-                    "nwb_format": "hdf5",
+                    "source_types": "hdf5",
                     "benchmark_id": "benchmark-a",
                     "leaderboard_label": implementation_id,
                     "total_seconds": 1.0,
@@ -105,7 +105,7 @@ class PlotTests(unittest.TestCase):
                     "implementation_id": "timeout",
                     "benchmark_id": "benchmark",
                     "leaderboard_label": "timeout",
-                    "nwb_format": "hdf5",
+                    "source_types": "hdf5",
                     "timed_out": True,
                     "total_seconds": 60.0,
                     "timeout_seconds": 60.0,
@@ -121,7 +121,7 @@ class PlotTests(unittest.TestCase):
                 "implementation_id": implementation_id,
                 "benchmark_id": "benchmark",
                 "leaderboard_label": implementation_id,
-                "nwb_format": "hdf5",
+                "source_types": "hdf5",
                 "total_seconds": elapsed,
             }
             for implementation_id, elapsed in (
@@ -188,7 +188,7 @@ class PlotTests(unittest.TestCase):
                     {
                         "result_dir": "run",
                         "implementation_id": "implementation",
-                        "nwb_format": "zarr",
+                        "source_types": "zarr",
                     }
                 ],
             )
@@ -208,7 +208,7 @@ class PlotTests(unittest.TestCase):
                 "benchmark_harness_version": "1.2.3",
                 "benchmark": {
                     "id": "benchmark",
-                    "nwb_format": "hdf5",
+                    "source_types": "hdf5",
                 },
                 "implementation": {
                     "id": "implementation",

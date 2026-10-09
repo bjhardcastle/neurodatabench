@@ -147,8 +147,8 @@ def _leaderboard_timing_rows(
     timing_rows: list[dict[str, object]] = []
     for row in rows:
         implementation_id = str(row.get("implementation_id", "unknown"))
-        nwb_format = str(row.get("nwb_format", "unknown"))
-        profile_series = f"{implementation_id} [{nwb_format}]"
+        source_types = str(row.get("source_types", "unknown"))
+        profile_series = f"{implementation_id} [{source_types}]"
         segments = row.get("timing_segments")
         if not isinstance(segments, list):
             total_seconds = _leaderboard_number_at(row, "total_seconds") or 0.0
@@ -330,7 +330,7 @@ def _leaderboard_profile_rows(
         profile_summary = _read_json_object(run_dir / "profile_summary.json") or {}
         profile_series = (
             f"{leaderboard_row['implementation_id']} "
-            f"[{leaderboard_row['nwb_format']}]"
+            f"[{leaderboard_row['source_types']}]"
         )
         sample_times = [
             time_ns
@@ -556,7 +556,7 @@ def _dashboard_title(metadata: neurodatabench.models.JsonObject) -> alt.TitlePar
         _metadata_label_value(metadata, "datetime_utc", "UTC"),
         _metadata_label_value(metadata, "hostname", "host"),
         _metadata_label_value(metadata, "benchmark_harness_version", "harness"),
-        _metadata_label_value(metadata, ("benchmark", "nwb_format"), "format"),
+        _metadata_label_value(metadata, ("benchmark", "data_sources"), "source types"),
         _metadata_label_value(
             metadata,
             ("implementation", "nwb_interface"),

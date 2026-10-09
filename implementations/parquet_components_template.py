@@ -35,7 +35,8 @@ import neurodatabench
 
 logger = neurodatabench.get_logger(__name__)
 
-_DEFAULT_BENCHMARK = "dynamic_routing_nwb_hdf5_v0"
+_DEFAULT_BENCHMARK = "dynamic_routing_nwb_v0"
+_SOURCE_TYPE = "hdf5"
 _DEFAULT_COMPONENT_BASE_URL = (
     "s3://aind-scratch-data/"
     "dynamic-routing/cache/nwb_components/v0.0.273"
@@ -50,11 +51,11 @@ def setup(context: neurodatabench.RunContext) -> None:
     """Configure process-level settings before answering benchmark questions."""
     logger.debug(
         "Preparing parquet-component access for %d NWB-derived sessions.",
-        len(context.benchmark.data_sources),
+        len(context.benchmark.data_sources[_SOURCE_TYPE]),
     )
     if context.benchmark.id != _DEFAULT_BENCHMARK:
         raise ValueError(
-            "The parquet component cache mirrors dynamic_routing_nwb_hdf5_v0; "
+            "The parquet component cache mirrors dynamic_routing_nwb_v0; "
             f"got {context.benchmark.id!r}."
         )
     _quiet_storage_debug_loggers()
@@ -64,13 +65,13 @@ def clear_cache(context: neurodatabench.RunContext) -> None:
     """Clear implementation-managed caches before timed benchmark phases."""
     logger.debug(
         "No local parquet-component cache to clear for %d NWB paths.",
-        len(context.benchmark.data_sources),
+        len(context.benchmark.data_sources[_SOURCE_TYPE]),
     )
 
 
 def submit_answers(context: neurodatabench.RunContext) -> None:
     """Submit answers for every benchmark question."""
-    data_sources = context.benchmark.data_sources
+    data_sources = context.benchmark.data_sources[_SOURCE_TYPE]
     for question in context.benchmark.questions:
         logger.debug("Answering benchmark question %s.", question.id)
         match question.id:
@@ -91,7 +92,7 @@ def teardown(context: neurodatabench.RunContext) -> None:
     """Release process-level resources."""
     logger.debug(
         "Parquet-component benchmark teardown for %d NWB paths.",
-        len(context.benchmark.data_sources),
+        len(context.benchmark.data_sources[_SOURCE_TYPE]),
     )
 
 

@@ -177,7 +177,7 @@ class BenchmarkMatrixScriptTests(unittest.TestCase):
             self.assertIn(f"--out {output_root}", output)
             self.assertIn(
                 str(
-                    Path("dynamic_routing_nwb_hdf5_v0")
+                    Path("dynamic_routing_nwb_v0")
                     / "lazynwb_0_2_91_obstore_hdf5"
                 ),
                 output,

@@ -63,7 +63,7 @@ class RunnerTests(unittest.TestCase):
                     implementation_object_store_backend="s3fs",
                     implementation_local_cache=None,
                     implementation_remote_cache=False,
-                    benchmark="dynamic_routing_nwb_zarr_v0",
+                    benchmark="dynamic_routing_nwb_v0",
                     out=tmpdir,
                     setup=setup,
                     submit_answers=submit_answers,
@@ -74,7 +74,7 @@ class RunnerTests(unittest.TestCase):
             self.assertIs(seen_contexts[0], seen_contexts[1])
             self.assertEqual(
                 seen_contexts[0].benchmark.id,
-                "dynamic_routing_nwb_zarr_v0",
+                "dynamic_routing_nwb_v0",
             )
             self.assertTrue((out_dir / "benchmark.json").exists())
             self.assertTrue((out_dir / "run_metadata.json").exists())
@@ -423,7 +423,7 @@ class RunnerTests(unittest.TestCase):
                     "timed_out": True,
                     "timeout_seconds": 120,
                     "implementation": {"id": "slow", "nwb_interface": "pynwb"},
-                    "benchmark": {"id": "benchmark", "nwb_format": "hdf5"},
+                    "benchmark": {"id": "benchmark", "data_sources": {"hdf5": []}},
                 },
                 "timings.json": {"total_duration_ns": 120_500_000_000},
                 "validation.json": {"correct": False, "timed_out": True},
@@ -575,19 +575,19 @@ class RunnerTests(unittest.TestCase):
         """Log level should resolve from env, call defaults, and CLI overrides."""
         with unittest.mock.patch.dict(os.environ, {"NDB_LOG_LEVEL": "error"}):
             env_config = neurodatabench.runner._resolve_config(
-                default_benchmark="dynamic_routing_nwb_zarr_v0",
+                default_benchmark="dynamic_routing_nwb_v0",
                 default_out=None,
                 default_log_level=None,
                 argv=(),
             )
             call_config = neurodatabench.runner._resolve_config(
-                default_benchmark="dynamic_routing_nwb_zarr_v0",
+                default_benchmark="dynamic_routing_nwb_v0",
                 default_out=None,
                 default_log_level="info",
                 argv=(),
             )
             cli_config = neurodatabench.runner._resolve_config(
-                default_benchmark="dynamic_routing_nwb_zarr_v0",
+                default_benchmark="dynamic_routing_nwb_v0",
                 default_out=None,
                 default_log_level="info",
                 argv=("--log-level", "debug"),
@@ -601,20 +601,20 @@ class RunnerTests(unittest.TestCase):
         """Fail-fast validation should resolve from all settings inputs."""
         with unittest.mock.patch.dict(os.environ, {"NDB_FAIL_FAST": "true"}):
             env_config = neurodatabench.runner._resolve_config(
-                default_benchmark="dynamic_routing_nwb_zarr_v0",
+                default_benchmark="dynamic_routing_nwb_v0",
                 default_out=None,
                 default_log_level=None,
                 argv=(),
             )
             call_config = neurodatabench.runner._resolve_config(
-                default_benchmark="dynamic_routing_nwb_zarr_v0",
+                default_benchmark="dynamic_routing_nwb_v0",
                 default_out=None,
                 default_log_level=None,
                 default_fail_fast=False,
                 argv=(),
             )
             cli_config = neurodatabench.runner._resolve_config(
-                default_benchmark="dynamic_routing_nwb_zarr_v0",
+                default_benchmark="dynamic_routing_nwb_v0",
                 default_out=None,
                 default_log_level=None,
                 default_fail_fast=False,
@@ -808,8 +808,7 @@ class RunnerTests(unittest.TestCase):
                 json.dumps(
                     {
                         "id": "timeout-benchmark",
-                        "nwb_format": "hdf5",
-                        "data_sources": [],
+                        "data_sources": {"hdf5": []},
                         "timeout_seconds": 0.05,
                         "questions": [],
                     }
@@ -891,7 +890,7 @@ class RunnerTests(unittest.TestCase):
         """Invalid log levels should fail during settings validation."""
         with self.assertRaises(pydantic.ValidationError):
             neurodatabench.runner._resolve_config(
-                default_benchmark="dynamic_routing_nwb_zarr_v0",
+                default_benchmark="dynamic_routing_nwb_v0",
                 default_out=None,
                 default_log_level="verbose",
                 argv=(),
@@ -1213,8 +1212,7 @@ def _benchmark_json(
     """Return a minimal benchmark JSON object."""
     benchmark: dict[str, object] = {
         "id": benchmark_id,
-        "data_sources": ["file:///tmp/test.nwb"],
-        "nwb_format": "hdf5",
+        "data_sources": {"hdf5": ["file:///tmp/test.nwb"]},
         "questions": questions,
     }
     if timeout_seconds is not None:

@@ -30,8 +30,7 @@ class Benchmark(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(frozen=True)
 
     id: str
-    data_sources: list[str]
-    nwb_format: Literal["hdf5", "zarr"]
+    data_sources: dict[str, list[str]]
     timeout_seconds: float | None = pydantic.Field(default=None, gt=0)
     questions: list[Question]
 

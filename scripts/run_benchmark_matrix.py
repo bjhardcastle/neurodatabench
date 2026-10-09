@@ -40,11 +40,7 @@ def find_repo_root(script_path: Path) -> Path:
 
 REPO_ROOT = find_repo_root(Path(__file__))
 
-BENCHMARK = "dynamic_routing"
-BENCHMARKS_BY_FORMAT = {
-    "hdf5": "dynamic_routing_nwb_hdf5_v0",
-    "zarr": "dynamic_routing_nwb_zarr_v0",
-}
+BENCHMARK = "dynamic_routing_nwb_v0"
 H5PY_REMOTE_FILE_BACKENDS = ("remfile", "s3fs", "obstore")
 CACHE_STATUSES: tuple[neurodatabench.models.LocalCacheState, ...] = ("cold",)
 
@@ -126,7 +122,8 @@ def configure_logging(log_level: str) -> None:
 def default_matrix() -> list[neurodatabench.matrix.MatrixRun]:
     """Build the repository's default benchmark matrix."""
     runs: list[neurodatabench.matrix.MatrixRun] = []
-    for nwb_format, benchmark in BENCHMARKS_BY_FORMAT.items():
+    benchmark = BENCHMARK
+    for _source_type in ("hdf5", "zarr"):
         for backend in ("obstore", "remfile", "s3fs"):
             runs.append(
                 neurodatabench.matrix.MatrixRun(
@@ -164,7 +161,7 @@ def default_matrix() -> list[neurodatabench.matrix.MatrixRun]:
         runs.append(
             neurodatabench.matrix.MatrixRun(
                 implementation="implementations/direct_h5py_template.py",
-                benchmark=BENCHMARKS_BY_FORMAT["hdf5"],
+                benchmark=BENCHMARK,
                 implementation_id=f"direct-h5py-{backend}",
                 object_store_backend=backend,
             )
@@ -176,7 +173,7 @@ def default_matrix() -> list[neurodatabench.matrix.MatrixRun]:
             runs.append(
                 neurodatabench.matrix.MatrixRun(
                     implementation=f"implementations/direct_zarr/{BENCHMARK}.py",
-                    benchmark=BENCHMARKS_BY_FORMAT["zarr"],
+                    benchmark=BENCHMARK,
                     implementation_id=f"direct-zarr-v{zarr_major}-{backend}",
                     object_store_backend=backend,
                     dependencies=(zarr_requirement,),
@@ -186,7 +183,7 @@ def default_matrix() -> list[neurodatabench.matrix.MatrixRun]:
     runs.append(
         neurodatabench.matrix.MatrixRun(
             implementation=f"implementations/pynwb_zarr/{BENCHMARK}.py",
-            benchmark=BENCHMARKS_BY_FORMAT["zarr"],
+            benchmark=BENCHMARK,
             implementation_id="pynwb-s3fs",
             object_store_backend="s3fs",
             dependencies=("zarr<3",),
@@ -197,7 +194,7 @@ def default_matrix() -> list[neurodatabench.matrix.MatrixRun]:
         runs.append(
             neurodatabench.matrix.MatrixRun(
                 implementation="implementations/pynwb_hdf5_template.py",
-                benchmark=BENCHMARKS_BY_FORMAT["hdf5"],
+                benchmark=BENCHMARK,
                 implementation_id=f"pynwb-{backend}",
                 object_store_backend=backend,
             )

@@ -1,15 +1,16 @@
 {
-  "id": "vr_foraging_nwb_zarr_v0",
-  "nwb_format": "zarr",
+  "id": "vr_foraging_nwb_v0",
   "timeout_seconds": 120,
-  "data_sources": [
+  "data_sources": {
+    "zarr": [
     "s3://aind-open-data/707349_2024-06-17_10-38-59_processed_2026-09-22_23-05-20/behavior.nwb.zarr",
     "s3://aind-open-data/707349_2024-06-24_10-05-33_processed_2026-09-22_23-05-37/behavior.nwb.zarr",
     "s3://aind-open-data/707349_2024-06-25_09-54-55_processed_2026-09-22_23-06-05/behavior.nwb.zarr",
     "s3://aind-open-data/707349_2024-06-26_10-29-55_processed_2026-09-22_23-06-04/behavior.nwb.zarr",
     "s3://aind-open-data/707349_2024-06-27_09-48-13_processed_2026-09-22_23-06-09/behavior.nwb.zarr",
     "s3://aind-open-data/707349_2024-06-28_09-55-06_processed_2026-09-22_23-06-04/behavior.nwb.zarr"
-  ],
+    ]
+  },
   "questions": [
     {
       "id": "multisession_reward_rate",

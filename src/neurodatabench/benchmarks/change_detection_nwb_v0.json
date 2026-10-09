@@ -1,14 +1,15 @@
 {
-  "id": "change_detection_nwb_zarr_v0",
-  "nwb_format": "zarr",
+  "id": "change_detection_nwb_v0",
   "timeout_seconds": 120,
-  "data_sources": [
+  "data_sources": {
+    "zarr": [
     "s3://aind-open-data/multiplane-ophys_804363_2025-08-14_14-24-15_behavior-nwb_2026-08-18_18-10-43/behavior.nwb.zarr",
     "s3://aind-open-data/multiplane-ophys_804363_2025-08-15_13-19-14_behavior-nwb_2026-08-18_18-10-44/behavior.nwb.zarr",
     "s3://aind-open-data/multiplane-ophys_804363_2025-08-28_14-46-56_behavior-nwb_2026-08-18_18-16-07/behavior.nwb.zarr",
     "s3://aind-open-data/multiplane-ophys_804363_2025-09-02_11-50-29_behavior-nwb_2026-08-18_18-16-00/behavior.nwb.zarr",
     "s3://aind-open-data/multiplane-ophys_804363_2025-09-04_16-08-45_behavior-nwb_2026-08-18_18-16-00/behavior.nwb.zarr"
-  ],
+    ]
+  },
   "questions": [
     {
       "id": "multisession_trials_hit_rate",

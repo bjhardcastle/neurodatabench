@@ -31,8 +31,9 @@ import neurodatabench
 
 logger = neurodatabench.get_logger(__name__)
 
-_DEFAULT_BENCHMARK = "change_detection_nwb_zarr_v0"
+_DEFAULT_BENCHMARK = "change_detection_nwb_v0"
 _DEFAULT_BACKEND = "obstore"
+_SOURCE_TYPE = "zarr"
 _RUNNING_SPEED_DOWNLOAD_SAMPLES = 20_000
 
 state: dict[str, Any] = {}
@@ -45,13 +46,13 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
         logger.debug("Answering benchmark question %s.", question.id)
         match question.id:
             case "multisession_trials_hit_rate":
-                answer = _multisession_trials_hit_rate(_get_trials_table(context.benchmark.data_sources))
+                answer = _multisession_trials_hit_rate(_get_trials_table(context.benchmark.data_sources[_SOURCE_TYPE]))
             case "max_speed_stimulus":
-                answer = _max_speed_stimulus(context.benchmark.data_sources[0])
+                answer = _max_speed_stimulus(context.benchmark.data_sources[_SOURCE_TYPE][0])
             case "multisession_lick_rate_average":
-                answer = _multisession_lick_rate_average(context.benchmark.data_sources)
+                answer = _multisession_lick_rate_average(context.benchmark.data_sources[_SOURCE_TYPE])
             case "change_detection_large_array":
-                answer = _change_detection_large_array(context.benchmark.data_sources[0])
+                answer = _change_detection_large_array(context.benchmark.data_sources[_SOURCE_TYPE][0])
             case _:
                 raise ValueError(f"Unsupported benchmark question: {question.id}")
         context.submit_answer(question.id, answer)
@@ -208,7 +209,7 @@ def clear_cache(context: neurodatabench.RunContext) -> None:
     """Remove the selected lazynwb catalog before a cold run."""
     logger.debug(
         "Clearing lazynwb caches for %d NWB paths before measured phases.",
-        len(context.benchmark.data_sources),
+        len(context.benchmark.data_sources[_SOURCE_TYPE]),
     )
     cache_path = _set_catalog_cache_path()
     for path in (cache_path, Path(f"{cache_path}-shm"), Path(f"{cache_path}-wal")):
@@ -217,7 +218,7 @@ def clear_cache(context: neurodatabench.RunContext) -> None:
 
 def setup(context: neurodatabench.RunContext) -> None:
     """Configure lazynwb before answering benchmark questions."""
-    logger.debug("Preparing lazynwb for %d NWB paths.", len(context.benchmark.data_sources))
+    logger.debug("Preparing lazynwb for %d NWB paths.", len(context.benchmark.data_sources[_SOURCE_TYPE]))
     _set_catalog_cache_path()
     os.environ.setdefault("AWS_REGION", "us-west-2")
 
@@ -228,7 +229,7 @@ def setup(context: neurodatabench.RunContext) -> None:
 
 def teardown(context: neurodatabench.RunContext) -> None:
     """Release process-level resources."""
-    logger.debug("Clearing lazynwb state for %d NWB paths.", len(context.benchmark.data_sources))
+    logger.debug("Clearing lazynwb state for %d NWB paths.", len(context.benchmark.data_sources[_SOURCE_TYPE]))
     state.clear()
 #endregion
 

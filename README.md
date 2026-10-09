@@ -19,7 +19,7 @@ From the repository root, run a packaged benchmark with `uv`:
 uv run implementations/pynwb_zarr/dynamic_routing.py
 ```
 
-The `.py` file contains code to fetch data from the files specified in a benchmark (in this case `src/neurodatabench/benchmarks/dynamic_routing_nwb_zarr_v0.json`) and submit answers to the benchmark runner.
+The `.py` file contains code to fetch data from the files specified in a benchmark (in this case `src/neurodatabench/benchmarks/dynamic_routing_nwb_v0.json`) and submit answers to the benchmark runner.
 
 Upon completion, profiling results are written to `results/<benchmark_id>/<implementation_id>`
 in the current directory. Pass `--out <path>` to use a different output directory.
@@ -65,7 +65,7 @@ from neurodatabench.matrix import MatrixRun, run_matrix
 runs = [
     MatrixRun(
         implementation="implementations/my_reader.py",
-        benchmark="dynamic_routing_nwb_hdf5_v0",
+        benchmark="dynamic_routing_nwb_v0",
         implementation_id="my-reader.1",
         object_store_backend="s3fs",
         dependencies=("my-reader==1.0",),

@@ -35,7 +35,8 @@ import neurodatabench
 logger = neurodatabench.get_logger(__name__)
 
 _DEFAULT_BACKEND = "remfile"
-_DEFAULT_BENCHMARK = "dynamic_routing_nwb_hdf5_v0"
+_SOURCE_TYPE = "hdf5"
+_DEFAULT_BENCHMARK = "dynamic_routing_nwb_v0"
 _DEFAULT_IMPLEMENTATION_ID = "direct_h5py"
 _FACEMAP_DOWNLOAD_ROWS = 12_850
 _FACEMAP_DOWNLOAD_COLUMNS = 128
@@ -46,7 +47,7 @@ def setup(context: neurodatabench.RunContext) -> None:
     logger.debug(
         "Preparing direct h5py/%s access for %d NWB files.",
         _backend(),
-        len(context.benchmark.data_sources),
+        len(context.benchmark.data_sources[_SOURCE_TYPE]),
     )
     _quiet_storage_debug_loggers()
 
@@ -55,7 +56,7 @@ def clear_cache(context: neurodatabench.RunContext) -> None:
     """Clear implementation-managed caches before timed benchmark phases."""
     logger.debug(
         "No local direct h5py disk cache to clear for %d NWB paths.",
-        len(context.benchmark.data_sources),
+        len(context.benchmark.data_sources[_SOURCE_TYPE]),
     )
 
 
@@ -65,15 +66,15 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
         logger.debug("Answering benchmark question %s.", question.id)
         match question.id:
             case "multisession_units_metadata_query":
-                answer = _count_visp_default_qc(context.benchmark.data_sources)
+                answer = _count_visp_default_qc(context.benchmark.data_sources[_SOURCE_TYPE])
             case "predicated_spike_times":
                 answer = _longest_isi_for_fastest_visp_unit(
-                    context.benchmark.data_sources,
+                    context.benchmark.data_sources[_SOURCE_TYPE],
                 )
             case "multisession_table_query":
-                answer = _multisession_table_query(context.benchmark.data_sources)
+                answer = _multisession_table_query(context.benchmark.data_sources[_SOURCE_TYPE])
             case "large_array":
-                answer = _large_array(context.benchmark.data_sources)
+                answer = _large_array(context.benchmark.data_sources[_SOURCE_TYPE])
             case _:
                 raise ValueError(f"Unsupported benchmark question: {question.id}")
         context.submit_answer(question.id, answer)
@@ -83,7 +84,7 @@ def teardown(context: neurodatabench.RunContext) -> None:
     """Release process-level resources."""
     logger.debug(
         "Direct h5py benchmark teardown for %d NWB paths.",
-        len(context.benchmark.data_sources),
+        len(context.benchmark.data_sources[_SOURCE_TYPE]),
     )
 
 

@@ -31,9 +31,10 @@ import neurodatabench
 
 logger = neurodatabench.get_logger(__name__)
 
-_DEFAULT_BENCHMARK = "dynamic_routing_nwb_zarr_v0"
+_DEFAULT_BENCHMARK = "dynamic_routing_nwb_v0"
 _DEFAULT_IMPLEMENTATION_ID = "direct_zarr"
 _DEFAULT_BACKEND = "s3fs"
+_SOURCE_TYPE = "zarr"
 _FACEMAP_DOWNLOAD_ROWS = 12_850
 _FACEMAP_DOWNLOAD_COLUMNS = 128
 
@@ -45,13 +46,13 @@ def submit_answers(context: neurodatabench.RunContext) -> None:
         logger.debug("Answering benchmark question %s.", question.id)
         match question.id:
             case "multisession_units_metadata_query":
-                answer = _count_visp_default_qc(context.benchmark.data_sources)
+                answer = _count_visp_default_qc(context.benchmark.data_sources[_SOURCE_TYPE])
             case "predicated_spike_times":
-                answer = _longest_isi_for_fastest_visp_unit(context.benchmark.data_sources)
+                answer = _longest_isi_for_fastest_visp_unit(context.benchmark.data_sources[_SOURCE_TYPE])
             case "multisession_table_query":
-                answer = _multisession_table_query(context.benchmark.data_sources)
+                answer = _multisession_table_query(context.benchmark.data_sources[_SOURCE_TYPE])
             case "large_array":
-                answer = _large_array(context.benchmark.data_sources)
+                answer = _large_array(context.benchmark.data_sources[_SOURCE_TYPE])
             case _:
                 raise ValueError(f"Unsupported benchmark question: {question.id}")
         context.submit_answer(question.id, answer)
@@ -149,7 +150,7 @@ def setup(context: neurodatabench.RunContext) -> None:
     logger.debug(
         "Preparing direct Zarr/%s access for %d NWB stores.",
         _backend(),
-        len(context.benchmark.data_sources),
+        len(context.benchmark.data_sources[_SOURCE_TYPE]),
     )
     os.environ.setdefault("AWS_REGION", "us-west-2")
     _quiet_storage_debug_loggers()
@@ -159,7 +160,7 @@ def clear_cache(context: neurodatabench.RunContext) -> None:
     """Clear implementation-managed caches before timed benchmark phases."""
     logger.debug(
         "No local direct Zarr cache to clear for %d NWB paths.",
-        len(context.benchmark.data_sources),
+        len(context.benchmark.data_sources[_SOURCE_TYPE]),
     )
 
 
@@ -167,7 +168,7 @@ def teardown(context: neurodatabench.RunContext) -> None:
     """Release process-level resources."""
     logger.debug(
         "Direct Zarr benchmark teardown for %d NWB paths.",
-        len(context.benchmark.data_sources),
+        len(context.benchmark.data_sources[_SOURCE_TYPE]),
     )
 
 
