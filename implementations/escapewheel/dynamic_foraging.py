@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import escapewheel_reader
 import numpy as np
+import pyarrow as pa
 import pydantic_settings
 
 import neurodatabench
@@ -162,12 +163,7 @@ def _large_array(packet: escapewheel_reader.Packet) -> float:
         _SPIKE_TIME_DOWNLOAD_COUNT,
         packet.location,
     )
-    unit_ids = _large_array_unit_ids(packet)
-    units = packet.table("core.units", columns=["unit_id"], unit_id=unit_ids)
-    if units["unit_id"].to_pylist() != unit_ids:
-        raise ValueError(
-            "Escapewheel unit storage order does not reproduce the NWB ragged-array order."
-        )
+    units = _large_array_units(packet)
     stored = escapewheel_reader.spike_times(
         packet,
         units=units,
@@ -189,8 +185,8 @@ def _large_array(packet: escapewheel_reader.Packet) -> float:
     )
 
 
-def _large_array_unit_ids(packet: escapewheel_reader.Packet) -> list[int]:
-    """Return source-ordered unit IDs covering the NWB spike-array prefix."""
+def _large_array_units(packet: escapewheel_reader.Packet) -> pa.Table:
+    """Return source-ordered units covering the NWB spike-array prefix."""
     probes = packet.table(
         "core.probes",
         columns=["probe_id"],
@@ -201,28 +197,38 @@ def _large_array_unit_ids(packet: escapewheel_reader.Packet) -> list[int]:
             f"Expected one probe named {_NWB_FIRST_PROBE!r} in {packet.location}, "
             f"found {probes.num_rows}."
         )
-    rows = packet.table(
+    units = packet.table(
         "core.units",
         columns=["unit_id", "local_unit_label", "n_spikes"],
         probe_id=int(probes["probe_id"][0].as_py()),
-    ).to_pylist()
+    )
+    rows = units.to_pylist()
     try:
-        rows.sort(key=lambda row: int(row["local_unit_label"]))
+        ordered_indices = sorted(
+            range(len(rows)),
+            key=lambda index: int(rows[index]["local_unit_label"]),
+        )
     except (TypeError, ValueError) as exc:
         raise ValueError(
             f"Probe {_NWB_FIRST_PROBE!r} has a non-numeric local unit label."
         ) from exc
 
-    selected: list[int] = []
+    selected_indices: list[int] = []
     spike_count = 0
-    for row in rows:
+    for index in ordered_indices:
+        row = rows[index]
         n_spikes = row["n_spikes"]
         if n_spikes is None:
             raise ValueError(f"Unit {row['unit_id']} has no n_spikes value.")
-        selected.append(int(row["unit_id"]))
+        selected_indices.append(index)
         spike_count += int(n_spikes)
         if spike_count >= _SPIKE_TIME_DOWNLOAD_COUNT:
-            return selected
+            if selected_indices != sorted(selected_indices):
+                raise ValueError(
+                    "Escapewheel unit storage order does not reproduce the NWB "
+                    "ragged-array order."
+                )
+            return units.take(pa.array(selected_indices, type=pa.int64()))
     raise ValueError(
         f"Probe {_NWB_FIRST_PROBE!r} has only {spike_count} spikes; "
         f"expected at least {_SPIKE_TIME_DOWNLOAD_COUNT}."
