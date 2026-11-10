@@ -1,5 +1,5 @@
 {
-  "id": "baseline_nwb_zarr_v0",
+  "id": "baseline_nwb_v0",
   "nwb_format": "zarr",
   "timeout_seconds": 120,
   "data_sources": {

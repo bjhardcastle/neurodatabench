@@ -732,7 +732,6 @@ def _submit_answer_timing_rows(
                 "duration_seconds": phase_timing.stop_seconds - previous_stop_seconds,
             }
         )
-
     return rows
 
 
