@@ -26,7 +26,6 @@ from neurodatabench.models import (
     RunContext,
     RunPhaseTiming,
     RunTimings,
-    RunMetric,
 )
 
 BenchmarkValidationError = validation.BenchmarkValidationError
@@ -54,7 +53,6 @@ __all__ = [
     "RunContext",
     "RunPhaseTiming",
     "RunTimings",
-    "RunMetric",
     "__version__",
     "main",
     "get_logger",

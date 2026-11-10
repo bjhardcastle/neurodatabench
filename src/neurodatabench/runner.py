@@ -379,7 +379,6 @@ def main(
     context = neurodatabench.models.RunContext(
         benchmark=loaded_benchmark,
         submit_answer=submit_answer,
-        run_metrics={}
     )
     profiler = _Profiler(interval_seconds=config.profile_interval_seconds)
     setup_duration_ns = 0
@@ -475,7 +474,6 @@ def main(
             metadata=metadata,
             implementation_script_path=implementation_script_path,
             timings=timings,
-            metrics=context.run_metrics,
             validation=validation,
             profile_samples=profiler.samples,
             profile_summary=profiler.summary(),
@@ -933,7 +931,6 @@ def _write_result_artifacts(
     metadata: neurodatabench.models.JsonObject,
     implementation_script_path: Path | None,
     timings: neurodatabench.models.RunTimings,
-    metrics: list[neurodatabench.models.RunMetric],
     validation: neurodatabench.models.JsonObject,
     profile_samples: list[neurodatabench.models.JsonObject],
     profile_summary: neurodatabench.models.JsonObject,
@@ -945,7 +942,6 @@ def _write_result_artifacts(
     _write_json(out_dir / "benchmark.json", raw_benchmark)
     _write_json(out_dir / "run_metadata.json", metadata)
     _write_json(out_dir / "timings.json", timings)
-    _write_json(out_dir / "metrics.json", metrics)
     _write_json(out_dir / "validation.json", validation)
     _write_json(out_dir / "profile_summary.json", profile_summary)
     _write_jsonl(out_dir / "profile_samples.jsonl", profile_samples)
@@ -957,7 +953,6 @@ def _write_result_artifacts(
         out_dir=out_dir,
         metadata=metadata,
         timings=timings,
-        metrics=metrics,
         profile_samples=profile_samples,
         profile_summary=profile_summary,
         run_start_wall_time_ns=run_start_wall_time_ns,

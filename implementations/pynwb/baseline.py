@@ -22,16 +22,11 @@
 
 from __future__ import annotations
 
-import numpy as np
 import pydantic_settings
-import s3fs
 import warnings
 import numcodecs.pickles
-from time import perf_counter_ns
 from typing import Any, Literal
 from hdmf_zarr import NWBZarrIO
-from hdmf.common import DynamicTable
-from pynwb import TimeSeries
 
 import neurodatabench
 
@@ -72,27 +67,51 @@ state: dict[str, Any] = {}
 def submit_answers(context: neurodatabench.RunContext) -> None:
     """Submit answers for every benchmark question."""
     for question in context.benchmark.questions:
-        logger.debug("Answering benchmark question %s.", question.id)
+        logger.debug("Answering benchmark question %s.", question.key)
 
         match question.id:
             case "load_trials_table":
-                answer = _load_trials_table(context.benchmark.data_sources[_SOURCE_TYPE][1])
+                _load_trials_table(context.benchmark.data_sources[_SOURCE_TYPE][1])
             case "load_units_table":
-                answer = _load_units_table(context.benchmark.data_sources[_SOURCE_TYPE][0])
+                _load_units_table(context.benchmark.data_sources[_SOURCE_TYPE][0])
             case "load_multiple_trials_tables":
-                tables_result = _load_multiple_trials_tables(context.benchmark.data_sources[_SOURCE_TYPE][1:])
-                for metric in tables_result:
-                    sliced_data = _prepare_time_metric_data(metric["x"], metric["y"])
-                    context.run_metrics[metric["name"]] = neurodatabench.RunMetric(
-                        x_data=sliced_data["x"],
-                        x_label=metric["x_label"],
-                        y_data=sliced_data["y"],
-                        y_label=metric["y_label"],
-                    )
+                n_tables = get_param(question, "n_tables")
+                _load_multiple_tables(context.benchmark.data_sources[_SOURCE_TYPE], n_tables, 'intervals/trials')
+            case "load_multiple_units_tables":
+                n_tables = get_param(question, "n_tables")
+                _load_multiple_tables(context.benchmark.data_sources[_SOURCE_TYPE], n_tables, 'units')
+            case "load_units_column":
+                col_name = get_param(question, "col_name")
+                _load_units_column(context.benchmark.data_sources[_SOURCE_TYPE][0], col_name)
             case _:
-                raise ValueError(f"Unsupported benchmark question: {question.id}")
+                raise ValueError(f"Unsupported benchmark question: {question.key}")
 
-        context.submit_answer(question.id, 0)
+        context.submit_answer(question.key, 0)
+
+
+def get_param(question: Any, param_name: str) -> Any:
+    """Return a question param by name, warning when falling back to its default."""
+    match param_name:
+        case "n_tables":
+            default: Any = 10
+        case "col_name":
+            default = None
+        case _:
+            raise ValueError(f"Unsupported param name: {param_name}")
+
+    if question.params and param_name in question.params:
+        value = question.params[param_name]
+        return int(value) if param_name == "n_tables" else str(value)
+    logger.warning(
+        "Question %s has no '%s' param; defaulting to %r.", question.id, param_name, default
+    )
+    return default
+
+
+def _load_units_column(nwb_path: str, col_name: str) -> None:
+    file = _open_file(nwb_path)
+    nwb_file = file["nwb_file"]
+    df = nwb_file.units.to_dataframe(exclude=set(nwb_file.units.colnames) - {col_name})
 
 
 def _load_trials_table(nwb_path: str) -> Any:
@@ -111,57 +130,21 @@ def _load_units_table(nwb_path: str) -> Any:
     return units_df
 
 
-def _load_multiple_trials_tables(nwb_paths: list[str]) -> list[dict[str, Any]]:
-    """Load trials tables in sequence and return metric series sharing one load-time (s) y axis.
-
-    The first series is keyed by tables loaded, the second by cumulative stored MB loaded.
-    """
+def _load_multiple_tables(nwb_paths: list[str], n_tables: int, table_name: str) -> None:
+    """Load multiple tables using pynwb"""
     n = len(nwb_paths)
-    if n <= 1:
-        raise ValueError(f"At least two NWB paths are required to load multiple trials tables. Paths provided: {n}.")
+    if n < n_tables:
+        raise ValueError(f"{n_tables} NWB paths were requested, but only {n} were provided.")
 
-    x_tables = [0]
-    x_mb = [0.0]
-    y_data = [0]
-    fs = s3fs.S3FileSystem(anon=True)
-    for i in range(n):
-        # Sized outside the timed section so the S3 listing is not counted as load time.
-        prefix = f"{nwb_paths[i].rstrip('/')}/intervals/trials".removeprefix("s3://")
-        table_mb = fs.du(prefix) / 1e6
-
-        start_ns = perf_counter_ns()
-        _load_trials_table(nwb_paths[i])
-        stop_ns = perf_counter_ns()
-
-        x_tables.append(i + 1)
-        x_mb.append(x_mb[-1] + table_mb)
-        y_data.append((stop_ns - start_ns) / 1_000_000_000)
-        logger.debug("Loaded %.2f MB trials table from %s.", table_mb, nwb_paths[i])
-
-    return [
-        {
-            "name": f"Load {n} Trials Tables",
-            "x": x_tables,
-            "x_label": "tables loaded",
-            "y": y_data,
-            "y_label": "load time (s)",
-        },
-        {
-            "name": f"Load {n} Trials Tables (MB)",
-            "x": x_mb,
-            "x_label": "MB loaded",
-            "y": y_data,
-            "y_label": "load time (s)",
-        },
-    ]
-
-def _prepare_time_metric_data(x: list, y:list) -> dict[str, Any]:
-    n_points = len(x)
-    step = 100 if n_points >= 200 else 10 if n_points >= 20 else 1
-    return {
-        "x": x[::step],
-        "y": [sum(y[:k + 1]) for k in range(0, n_points, step)],
-    }
+    table_dfs = []
+    for i in range(n_tables):
+        if table_name == "intervals/trials":
+            df = _load_trials_table(nwb_paths[i])
+        elif table_name == "units":
+            df = _load_units_table(nwb_paths[i])
+        else:
+            raise ValueError(f"Unsupported table name: {table_name}")
+        table_dfs.append(df)
 #endregion
 
 

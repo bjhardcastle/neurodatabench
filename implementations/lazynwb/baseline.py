@@ -24,13 +24,11 @@ import os
 import numcodecs.pickles
 import tempfile
 from pathlib import Path
-from time import perf_counter_ns
 from typing import Any, Literal
 
 import lazynwb
 import pydantic_settings
 import pandas as pd
-import s3fs
 
 import neurodatabench
 
@@ -74,26 +72,45 @@ state: dict[str, Any] = {}
 def submit_answers(context: neurodatabench.RunContext) -> None:
     """Submit answers for every benchmark question."""
     for question in context.benchmark.questions:
-        logger.debug("Answering benchmark question %s.", question.id)
+        logger.debug("Answering benchmark question %s.", question.key)
 
         match question.id:
             case "load_trials_table":
-                answer = _load_table(context.benchmark.data_sources[_SOURCE_TYPE][1], '/intervals/trials')
+                _load_table(context.benchmark.data_sources[_SOURCE_TYPE][1], '/intervals/trials')
             case "load_units_table":
-                answer = _load_table(context.benchmark.data_sources[_SOURCE_TYPE][0], '/units')
+                _load_table(context.benchmark.data_sources[_SOURCE_TYPE][0], '/units')
             case "load_multiple_trials_tables":
-                tables_result = _load_multiple_trials_tables(context.benchmark.data_sources[_SOURCE_TYPE][1:])
-                for metric in tables_result:
-                    context.run_metrics[metric["name"]] = neurodatabench.RunMetric(
-                        x_data=metric["x"],
-                        x_label=metric["x_label"],
-                        y_data=metric["y"],
-                        y_label=metric["y_label"],
-                    )
+                n_tables = get_param(question, "n_tables")
+                _load_multiple_tables(context.benchmark.data_sources[_SOURCE_TYPE], n_tables, 'intervals/trials')
+            case "load_multiple_units_tables":
+                n_tables = get_param(question, "n_tables")
+                _load_multiple_tables(context.benchmark.data_sources[_SOURCE_TYPE], n_tables, 'units')
+            case "load_units_column":
+                col_name = get_param(question, "col_name")
+                _load_units_column(context.benchmark.data_sources[_SOURCE_TYPE][0], col_name)
             case _:
-                raise ValueError(f"Unsupported benchmark question: {question.id}")
+                raise ValueError(f"Unsupported benchmark question: {question.key}")
 
-        context.submit_answer(question.id, 0)
+        context.submit_answer(question.key, 0)
+
+
+def get_param(question: Any, param_name: str) -> Any:
+    """Return a question param by name, warning when falling back to its default."""
+    match param_name:
+        case "n_tables":
+            default: Any = 10
+        case "col_name":
+            default = None
+        case _:
+            raise ValueError(f"Unsupported param name: {param_name}")
+
+    if question.params and param_name in question.params:
+        value = question.params[param_name]
+        return int(value) if param_name == "n_tables" else str(value)
+    logger.warning(
+        "Question %s has no '%s' param; defaulting to %r.", question.id, param_name, default
+    )
+    return default
 
 
 def _load_table(file: Any, table_name: str) -> None:
@@ -105,53 +122,25 @@ def _load_table(file: Any, table_name: str) -> None:
     assert type(df) is pd.DataFrame
 
 
-def _load_multiple_trials_tables(nwb_paths: list[str]) -> list[dict[str, Any]]:
-    """Load trials tables in sequence and return metric series sharing one load-time (s) y axis.
-
-    The first series is keyed by tables loaded, the second by cumulative stored MB loaded.
-    """
+def _load_multiple_tables(nwb_paths: list[str], n_tables: int, table_name: str) -> None:
+    """Load multiple tables using lazynwb."""
     n = len(nwb_paths)
-    if n <= 1:
-        raise ValueError(f"At least two NWB paths are required to load multiple trials tables. Paths provided: {n}.")
+    if n < n_tables:
+        raise ValueError(f"{n_tables} NWB paths were requested, but only {n} were provided.")
 
-    x_tables = [0]
-    x_mb = [0.0]
-    y_data = [0]
-    step = 100 if n >= 200 else 10 if n >= 20 else 1
-    fs = s3fs.S3FileSystem(anon=True)
-    prev = 0
-    for i in range(step, n + 1, step):
-        batch_mb = sum(
-            fs.du(f"{path.rstrip('/')}/intervals/trials".removeprefix("s3://"))
-            for path in nwb_paths[prev:i]
-        ) / 1e6
+    lazynwb.get_df(
+        nwb_paths[0:n_tables],
+        table_name,
+        exclude_array_columns=False
+    )
 
-        start_ns = perf_counter_ns()
-        lazynwb.get_df(nwb_paths[0:i], 'intervals/trials')
-        stop_ns = perf_counter_ns()
 
-        x_tables.append(i)
-        x_mb.append(x_mb[-1] + batch_mb)
-        y_data.append((stop_ns - start_ns) / 1_000_000_000)
-        logger.debug("Loaded %.2f MB of trials tables from %s tables (%d-%d).", batch_mb, i - prev, prev, i - 1)
-        prev = i
-
-    return [
-        {
-            "name": f"Load {n} Trials Tables",
-            "x": x_tables,
-            "x_label": "tables loaded",
-            "y": y_data,
-            "y_label": "load time (s)",
-        },
-        {
-            "name": f"Load {n} Trials Tables (MB)",
-            "x": x_mb,
-            "x_label": "MB loaded",
-            "y": y_data,
-            "y_label": "load time (s)",
-        },
-    ]
+def _load_units_column(nwb_path: str, col_name: str) -> None:
+    lazynwb.get_df(
+        nwb_path,
+        "units",
+        include_column_names=[col_name]
+    )
 #endregion
 
 #region Runtime Configuration

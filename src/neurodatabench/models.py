@@ -22,6 +22,15 @@ class Question:
     text: str
     answer: JsonValue
     """The expected answer"""
+    params: dict[str, str] | None = None
+
+    @property
+    def key(self) -> str:
+        """Unique answer key: the ID with any params appended, e.g. `id_n_tables=10`."""
+        if not self.params:
+            return self.id
+        suffix = "_".join(f"{name}={value}" for name, value in self.params.items())
+        return f"{self.id}_{suffix}"
 
 
 class Benchmark(pydantic.BaseModel):
@@ -63,16 +72,6 @@ class RunContext:
 
     benchmark: Benchmark
     submit_answer: Callable[[str, JsonValue], None]
-    run_metrics: dict[str, RunMetric]
-
-
-@dataclasses.dataclass(slots=True)
-class RunMetric:
-    """A single metric result for the current run."""
-    x_data: list[int]
-    x_label: str
-    y_data: list[int]
-    y_label: str
 
 
 @dataclasses.dataclass(slots=True, frozen=True)

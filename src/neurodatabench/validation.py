@@ -89,17 +89,17 @@ def validate_answers(
 ) -> None:
     """Validate all submitted answers after timed execution finishes."""
     errors: list[str] = []
-    by_question_id: dict[str, list[Mapping[str, Any]]] = {}
+    by_question_key: dict[str, list[Mapping[str, Any]]] = {}
     for submitted_answer in submitted_answers:
-        question_id = str(submitted_answer["question_id"])
-        by_question_id.setdefault(question_id, []).append(submitted_answer)
+        question_key = str(submitted_answer["question_id"])
+        by_question_key.setdefault(question_key, []).append(submitted_answer)
 
     for question in benchmark.questions:
-        matches = by_question_id.get(question.id, [])
+        matches = by_question_key.get(question.key, [])
         if not matches:
             errors.append(
                 _validation_error_detail(
-                    question_id=question.id,
+                    question_id=question.key,
                     reason="missing_answer",
                     actual_answer=question.answer,
                     submitted_answer=_MISSING_ANSWER,
@@ -109,7 +109,7 @@ def validate_answers(
         if len(matches) > 1:
             errors.append(
                 _validation_error_detail(
-                    question_id=question.id,
+                    question_id=question.key,
                     reason="duplicate_answer",
                     actual_answer=question.answer,
                     submitted_answer=[match["answer"] for match in matches],
@@ -125,17 +125,17 @@ def validate_answers(
         if mismatch_reason is not None:
             errors.append(
                 _validation_error_detail(
-                    question_id=question.id,
+                    question_id=question.key,
                     reason=mismatch_reason,
                     actual_answer=question.answer,
                     submitted_answer=submitted_answer["answer"],
                 )
             )
 
-    known_question_ids = {question.id for question in benchmark.questions}
+    known_question_keys = {question.key for question in benchmark.questions}
     for submitted_answer in submitted_answers:
         question_id = str(submitted_answer["question_id"])
-        if question_id not in known_question_ids:
+        if question_id not in known_question_keys:
             errors.append(
                 _validation_error_detail(
                     question_id=question_id,
@@ -153,9 +153,9 @@ def _question_by_id(
     benchmark: neurodatabench.models.Benchmark,
     question_id: str,
 ) -> neurodatabench.models.Question | None:
-    """Return a benchmark question by ID, if present."""
+    """Return a benchmark question by answer key (ID plus params), if present."""
     for question in benchmark.questions:
-        if question.id == question_id:
+        if question.key == question_id:
             return question
     return None
 
