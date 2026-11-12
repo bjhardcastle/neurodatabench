@@ -15,7 +15,7 @@
 # ///
 
 
-"""lazynwb answers for the change detection benchmark questions."""
+"""lazynwb answers for the baseline benchmark questions."""
 
 from __future__ import annotations
 

@@ -20,7 +20,7 @@
 # ///
 
 
-"""Direct Zarr implementation for the change detection benchmark questions."""
+"""Direct Zarr implementation for the baseline benchmark questions."""
 
 from __future__ import annotations
 

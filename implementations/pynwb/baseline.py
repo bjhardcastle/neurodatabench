@@ -18,7 +18,7 @@
 # ///
 
 
-"""PyNWB NWBZarrIO answers for the change detection benchmark questions."""
+"""PyNWB NWBZarrIO answers for the baseline benchmark questions."""
 
 from __future__ import annotations
 
