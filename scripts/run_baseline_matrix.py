@@ -37,7 +37,7 @@ def find_repo_root(script_path: Path) -> Path:
 
 REPO_ROOT = find_repo_root(Path(__file__))
 
-BENCHMARK = "baseline_nwb_zarr_v0"
+BENCHMARK = "baseline_nwb_v0"
 CACHE_STATUSES: tuple[neurodatabench.models.LocalCacheState, ...] = ("cold",)
 
 
